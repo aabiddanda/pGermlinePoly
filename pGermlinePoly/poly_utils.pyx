@@ -17,3 +17,5 @@ cdef double logsumexp(double[:] x):
     for i in range(n):
         c += exp(x[i] - m)
     return m + log(c)
+
+# TODO: estimation of gamma probabilities

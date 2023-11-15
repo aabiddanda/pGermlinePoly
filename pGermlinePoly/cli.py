@@ -3,8 +3,8 @@ import logging
 import sys
 
 import click
-from tqdm import tqdm
 from cyvcf2 import VCF
+from tqdm import tqdm
 
 # Setup the logging configuration for the CLI
 logging.basicConfig(
@@ -13,6 +13,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+
 @click.command()
 @click.option(
     "--vcf",
@@ -20,6 +21,13 @@ logging.basicConfig(
     required=True,
     type=click.Path(exists=True),
     help="Input VCF file.",
+)
+@click.option(
+    "--config",
+    "-c",
+    required=True,
+    type=click.Path(exists=True),
+    help="Input file detailing clone structure.",
 )
 @click.option(
     "--nthreads",
@@ -37,11 +45,7 @@ logging.basicConfig(
     default="out.vcf.gz",
     help="Output VCF file",
 )
-def main(
-    vcf,
-    nthreads,
-    out
-):
+def main(vcf, nthreads, out):
     """Karyohmm CLI."""
     logging.info(f"Starting to read input data {vcf}.")
     logging.info(f"Finished reading in {vcf}.")
