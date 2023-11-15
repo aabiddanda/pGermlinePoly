@@ -54,6 +54,17 @@ class ProbGermline:
             )
         return post_k
 
+    def incomplete_logll(self, lambdas=np.array([-1,-3]), lambdas_prev=np.array([-1,-2])):
+    		"""Compute the incomplete."""
+    		post_k = self.post_prob_het(lambdas=lambdas_prev)
+    		logll = 0.0
+    		for k in range(self.K):
+    				x_k = np.sum(lambdas * anno[k, :])
+    				pi_k = 1.0 / (1.0 + np.exp(-x_k))
+    				logll += gammas_k[k]*(np.log(pi_k) + np.sum(X[k, :, 1:-1]))
+    				logll += (1 - gammas_k[k])*(np.log(1.0 - pi_k) + np.sum(X[k, :, [0, -1]]))
+  			return logll
+
     def em_algo(self, lambdas=np.array([-1, -2]), delta_logll=1e-2):
         """EM-algorithm to estimate parameters for prior of germline polymorphism."""
         assert lambdas.size == self.A
@@ -62,5 +73,4 @@ class ProbGermline:
         loglls.append()
         cur_delta = 1e9
         while cur_delta >= delta_logll:
-
-            pass
+        	pass

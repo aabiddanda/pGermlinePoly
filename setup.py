@@ -1,4 +1,4 @@
-"""Setup module for building karyohmm."""
+"""Setup module for building pGermlinePoly."""
 
 
 from Cython.Build import cythonize
