@@ -1,0 +1,14 @@
+[build-system]
+requires = [
+    "setuptools>=61",
+    "wheel",
+    "cython",
+    "scipy",
+    "numpy",
+    "cyvcf2"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pGermlinePoly"
+version = "0.0.1a"
