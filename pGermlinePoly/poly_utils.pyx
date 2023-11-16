@@ -18,4 +18,11 @@ cdef double logsumexp(double[:] x):
         c += exp(x[i] - m)
     return m + log(c)
 
-# TODO: estimation of gamma probabilities
+cdef double log_prior(double [:] l, double[:] a):
+    """Cython implementation of the logistic function and log-calculation."""
+    cdef int i, n;
+    cdef double xk;
+    n = l.size
+    for i in range(n):
+        xk += l[i]*a[i]
+    return 1.0 / (1.0 + exp(xk))
