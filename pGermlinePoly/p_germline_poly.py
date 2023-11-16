@@ -1,5 +1,6 @@
 import numpy as np
 from poly_utils import *
+from scipy.optimize import minimize
 
 
 class ProbGermline:
@@ -52,11 +53,12 @@ class ProbGermline:
                     np.log(1 - pi_k) + np.sum(X[k, :, [0, -1]]),
                 ]
             )
-        return post_k
+        return logll
 
-    def incomplete_logll(self, lambdas=np.array([-1,-3]), lambdas_prev=np.array([-1,-2])):
+    def incomplete_logll(self, gammas_k, lambdas=np.array([-1,-3])):
     		"""Compute the incomplete."""
-    		post_k = self.post_prob_het(lambdas=lambdas_prev)
+    		# post_k = self.post_prob_het(lambdas=lambdas_prev)
+    		assert post_k.size == self.K
     		logll = 0.0
     		for k in range(self.K):
     				x_k = np.sum(lambdas * anno[k, :])
@@ -65,12 +67,28 @@ class ProbGermline:
     				logll += (1 - gammas_k[k])*(np.log(1.0 - pi_k) + np.sum(X[k, :, [0, -1]]))
   			return logll
 
+  	def opt_lambdas(self, lambdas_prev=np.array([-1,-2])):
+  			"""Optimize the lambda parameters in the incomplete log-likelihood for EM."""
+  			post_k = self.post_prob_het(lambdas=lambdas_prev)
+  			opt_res = minimize(
+            lambda x: -self.incomplete_logll(
+                gammas_k = post_k,
+                lambdas=x
+            )
+            x0=lambdas_prev,
+            method="L-BFGS-B",
+            bounds=[[-100, 100] for k in range(self.A)],
+            tol=1e-4,
+            options={"disp": True, "ftol": 1e-4, "xtol": 1e-4},
+        )
+        lambda_hat = opt_res.x
+        return lambda_hat
+
     def em_algo(self, lambdas=np.array([-1, -2]), delta_logll=1e-2):
         """EM-algorithm to estimate parameters for prior of germline polymorphism."""
         assert lambdas.size == self.A
         prev_lambdas = lambdas
         loglls = []
-        loglls.append()
+        loglls.append(self.incomplete_logll(lambdas=lambdas_prev, lambdas=lambdas_prev))
         cur_delta = 1e9
         while cur_delta >= delta_logll:
-        	pass
