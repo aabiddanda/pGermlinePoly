@@ -1,6 +1,5 @@
 import yaml
-from cerebrus import Validator
-from cyvcf2 import VCF
+from cerberus import Validator
 
 
 def check_samples(vcf, samples=[]):
@@ -38,7 +37,7 @@ germline_schema = {
 
 
 def validate_config(config_yaml_fp, schema=germline_schema):
-    """Validate a config-file."""
+    """Validate a config-file using an underlying schema."""
     v = Validator(schema)
     with open(config_yaml_fp, "r") as stream:
         config = yaml.load(stream)

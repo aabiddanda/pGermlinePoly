@@ -22,8 +22,8 @@ class ProbGermline:
         assert K == self.K
         self.Theta = Theta
 
-    def post_prob_het(self, lambdas=np.array([-1, -2])):
-        """Posterior probability of being polymorphic in the germline."""
+    def post_prob_poly(self, lambdas=np.array([-1, -2])):
+        """Posterior probability of being germline polymorphic."""
         assert lambdas.size == self.A
         post_k = np.zeros(self.K)
         for k in range(self.K):
@@ -88,7 +88,7 @@ class ProbGermline:
         cur_delta = 1e9
         while cur_delta >= delta_logll:
             # E-step: estimate the expected probability
-            gammas_k = self.post_prob_het(lambdas=lambdas_prev)
+            gammas_k = self.post_prob_poly(lambdas=lambdas_prev)
             # M-step: maximize the parameters
             lambdas_hat = self.opt_lambdas(gammas_k=np.exp(gammas_k))
             loglls.append(self.complete_logll(lambdas=lambdas_hat))
