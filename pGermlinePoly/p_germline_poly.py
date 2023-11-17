@@ -28,11 +28,11 @@ class ProbGermline:
         post_k = np.zeros(self.K)
         for k in range(self.K):
             # Estimate the prior based on the weighted annotations
-            pi_k = log_prior(lambdas, anno[k, :])
+            pi_k = log_prior(lambdas, self.Theta[k, :])
             # Compute the posterior as an average across all the clones
             # NOTE: we assume that X contains the log-likelihood GL values...
-            post_poly_k = np.log(pi_k) + np.sum(X[k, :, 1:-1])
-            post_nonpoly_k = np.log(1.0 - pi_k) + np.sum(X[k, :, [0, -1]])
+            post_poly_k = np.log(pi_k) + np.sum(self.X[k, :, 1:-1])
+            post_nonpoly_k = np.log(1.0 - pi_k) + np.sum(self.X[k, :, [0, -1]])
             post_k[k] = post_poly_k - logsumexp([post_poly_k, post_nonpoly_k])
         return post_k
 
@@ -41,12 +41,12 @@ class ProbGermline:
         assert lambdas.size == self.A
         logll = 0.0
         for k in range(self.K):
-            pi_k = log_prior(lambdas, anno[k, :])
+            pi_k = log_prior(lambdas, self.Theta[k, :])
             # Compute the likelihood as a sum across sites
             logll += logsumexp(
                 [
-                    np.log(pi_k) + np.sum(X[k, :, 1:-1]),
-                    np.log(1.0 - pi_k) + np.sum(X[k, :, [0, -1]]),
+                    np.log(pi_k) + np.sum(self.X[k, :, 1:-1]),
+                    np.log(1.0 - pi_k) + np.sum(self.X[k, :, [0, -1]]),
                 ]
             )
         return logll
@@ -60,15 +60,17 @@ class ProbGermline:
         assert gammas_k.size == self.K
         logll = 0.0
         for k in range(self.K):
-            pi_k = log_prior(lambdas, anno[k])
-            logll += gammas_k[k] * (np.log(pi_k) + np.sum(X[k, :, 1:-1]))
-            logll += (1 - gammas_k[k]) * (np.log(1.0 - pi_k) + np.sum(X[k, :, [0, -1]]))
+            pi_k = log_prior(lambdas, self.Theta[k])
+            logll += gammas_k[k] * (np.log(pi_k) + np.sum(self.X[k, :, 1:-1]))
+            logll += (1 - gammas_k[k]) * (
+                np.log(1.0 - pi_k) + np.sum(self.X[k, :, [0, -1]])
+            )
         return logll
 
     def opt_lambdas(self, gammas_k):
         opt_res = minimize(
             lambda x: -self.incomplete_logll(gammas_k=gammas_k, lambdas=x),
-            x0=lambdas_prev,
+            x0=[0 for _ in range(self.A)],
             method="L-BFGS-B",
             bounds=[(-100, 100) for k in range(self.A)],
             tol=1e-4,
@@ -80,7 +82,7 @@ class ProbGermline:
     def em_algo(self, lambdas=np.array([-1, -2]), delta_logll=1e-2):
         """EM-algorithm to estimate parameters for prior of germline polymorphism."""
         assert lambdas.size == self.A
-        prev_lambdas = lambdas
+        lambdas_prev = lambdas
         loglls = []
         loglls.append(self.complete_logll(lambdas=lambdas_prev))
         cur_delta = 1e9
@@ -88,7 +90,7 @@ class ProbGermline:
             # E-step: estimate the expected probability
             gammas_k = self.post_prob_het(lambdas=lambdas_prev)
             # M-step: maximize the parameters
-            lambda_hat = self.opt_lambdas(gammas_k=np.exp(gammas_k))
+            lambdas_hat = self.opt_lambdas(gammas_k=np.exp(gammas_k))
             loglls.append(self.complete_logll(lambdas=lambdas_hat))
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
