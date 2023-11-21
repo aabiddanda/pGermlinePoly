@@ -1,4 +1,4 @@
-"""Setup module for building pGermlinePoly utilities"""
+"""Setup module for building pGermlinePoly utilities."""
 
 
 from distutils.core import Extension
