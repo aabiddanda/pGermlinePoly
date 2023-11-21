@@ -95,3 +95,28 @@ class ProbGermline:
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
         return loglls, prev_lambdas
+
+
+class ClonalSim:
+    """A class for simulating clonal sequencing data."""
+
+    def __init__(self, n_sites=100000, n_clones=10):
+        assert n_sites > 0
+        assert n_clones > 0
+        self.K = n_sites
+        self.J = n_clones
+
+    def simulate_germline(self, afs=None, mut_rate=1.2e-8):
+        """Simulate a new germline sample"""
+        pass
+
+    def simulate_clones(self, age=90, somatic_mut_rate=3e-6):
+        """Simulate a number of clonal samples under a coalescent model.
+
+        Arguments:
+            age (`int`): the age of the individual at time of sampling.
+            somatic_mut_rate (`float`): the somatic mutation rate /bp/year
+        """
+        assert age > 0
+        assert somatic_mut_rate > 0
+        pass
