@@ -7,7 +7,7 @@ from cyvcf2 import VCF
 from tqdm import tqdm
 
 from pGermlinePoly import ProbGermline
-from pGermlinePoly.io import check_annotations, check_samples, validate_config
+from pGermlinePoly.io import *
 
 # Setup the logging configuration for the CLI
 logging.basicConfig(
@@ -56,11 +56,15 @@ def main(vcf, config, nthreads, out):
     logging.info(f"Starting VCF checks on {vcf}...")
     samples = config["germline"] + config["clones"]
     annotations = config["annotations"]
-    cur_vcf = VCF(vcf, samples=samples, threads=nthreads)
+    cur_vcf = VCF(vcf, samples=samples)
     check_samples(cur_vcf, samples=samples)
     check_annotations(cur_vcf, annotations=annotations)
     logging.info(f"Finished quality checks on {vcf}!")
     logging.info("Extracting data for EM-algorithm ...")
+    germline_vcf = VCF(vcf, samples=config["germline"], threads=nthreads)
+    germline_anno = create_germline_anno(vcf)
+    clonal_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
+    clone_pl = create_clonal_pl_matrix(clonal_vcf)
     logging.info("Finished extracting data for EM-algorithm ...")
     logging.info("Starting EM-algorithm...")
     # p_germline = ProbGermline()

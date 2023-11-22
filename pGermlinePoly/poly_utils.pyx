@@ -5,6 +5,15 @@ cdef double sqrt2 = sqrt(2.);
 cdef double sqrt2pi = sqrt(2*pi);
 cdef double logsqrt2pi = log(1/sqrt2pi)
 
+
+cdef double logaddexp(double a, double b):
+    """Log-add exponential for two values."""
+    cdef double m;
+    cdef double c;
+    m  = max(a, b)
+    c = exp(a - m) + exp(b - m)
+    return m + log(c)
+
 cpdef double logsumexp(double[:] x):
     """Cython implementation of the logsumexp trick."""
     cdef int i,n;
@@ -53,3 +62,14 @@ cpdef double geno_loglik(int alt_reads, int tot_reads, int a1=0, int a2=0, int q
         # These reads carry only the reference allele
         gl += log(0.5*((1 - eps)*(a1 == 0) + (eps/3)*(a1 == 1)) + 0.5*((1 - eps)*(a2 == 0) + (eps/3)*(a2 == 1)))
     return gl
+
+
+cpdef double complete_loglik(int K, double[:] lambdas, double[:,:] Theta, double[:,:,:] X):
+    """Cython helper for computing the full-data log-likelihood."""
+    cdef double logll = 0.0;
+    cdef int k;
+    for k in range(K):
+        pi_k = log_prior(lambdas, Theta[k, :])
+        # Compute the likelihood as a sum across sites
+        logll += logaddexp(log(pi_k) + sum(X[k, :, 1:-1]), log(1.0 - pi_k) + sum(X[k, :, 0]) + sum(X[k, :, -1]))
+    return logll

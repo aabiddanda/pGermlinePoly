@@ -1,6 +1,6 @@
 """Inference and simulation of germline polymorphism in clonal sequencing data."""
 import numpy as np
-from poly_utils import geno_loglik, log_prior, logsumexp
+from poly_utils import complete_loglik, geno_loglik, log_prior, logsumexp
 from scipy.optimize import minimize
 
 
@@ -34,10 +34,10 @@ class ProbGermline:
         """Posterior probability of being germline polymorphic.
 
         Arguments:
-            - lambdas (`np.array`):
+            - lambdas (`np.array`): weight parameters for logistic priors.
 
         Returns:
-            - post_k (`np.array`):
+            - post_k (`np.array`): posterior probability of site being germline polymorphic.
 
         """
         assert lambdas.size == self.A
@@ -57,20 +57,15 @@ class ProbGermline:
         """Compute the complete data log-likelihood.
 
         Arguments:
-            - lambdas (`np.array`):
+            - lambdas (`np.array`): weight parameters for logistic priors.
+
+        Returns:
+            - logll (`float`): log-likelihood of the model.
 
         """
         assert lambdas.size == self.A
-        logll = 0.0
-        for k in range(self.K):
-            pi_k = log_prior(lambdas, self.Theta[k, :])
-            # Compute the likelihood as a sum across sites
-            logll += logsumexp(
-                [
-                    np.log(pi_k) + np.sum(self.X[k, :, 1:-1]),
-                    np.log(1.0 - pi_k) + np.sum(self.X[k, :, [0, -1]]),
-                ]
-            )
+        # run the complete log-likelihood helper function ...
+        logll = complete_loglik(self.K, lambdas, self.Theta, self.X)
         return logll
 
     def incomplete_logll(self, gammas_k, lambdas=np.array([-1, -3])):
