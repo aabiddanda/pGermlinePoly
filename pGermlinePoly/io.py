@@ -42,38 +42,38 @@ def check_anno(vcf, annotations=["PL", "AD"]):
         assert a in vcf.contains(a)
 
 
-def create_germline_anno(vcf, germline_sample, biallelic_snps=True):
-    """Create the germline annotation for the clonal sequencing data."""
-    assert germline_sample in vcf.samples
+def create_germline_anno(vcf):
+    """Create the germline annotation for the clonal sequencing data.
+
+    NOTE: currently this method only considers biallelic SNVs in the annotation model.
+    NOTE: this can support more than one germline sample if available as well to improve inference.
+    """
     assert vcf.contains("PL")
     germline_log_ratio = []
     for v in tqdm(vcf):
-        if biallelic_snps:
-            if v.is_snp and (len(v.ALT) == 1):
-                x = np.array(vcf.format("PL")[0])
-                germline_log_ratio.append(np.sum(x[1:-1]) - (x[0] + x[-1]))
-            else:
-                germline_log_ratio.append(np.nan)
+        if v.is_snp and (len(v.ALT) == 1):
+            x = v.format("PL")
+            poly_lrr = np.min(x[:, 1:-1], axis=1) - np.min(x[:, [0, -1]])
+            germline_log_ratio.append(np.mean(poly_lrr))
         else:
-            raise NotImplementedError(
-                "Current implementation of pGermlinePoly focuses on biallelic SNVs only."
-            )
+            germline_log_ratio.append(np.nan)
+    return np.array(germline_log_ratio, dtype=np.float32)
 
 
-def create_clonal_pl_matrix(vcf, biallelic_snps=True):
+def create_clonal_pl_matrix(vcf):
     """Create the X matrix for inference from clonal samples.
 
-    The X matrix is a K x J x 3 tensor for biallelic SNPs.
+    The X matrix is a K x J x 3 tensor for biallelic SNPs of the normalized PL values from GATK.
     """
     assert vcf.contains("PL")
+    assert len(vcf.samples) > 1
     X = []
     for v in tqdm(vcf):
-        if biallelic_snps:
-            if v.is_snp and (len(v.ALT) == 1):
-                x = vcf.format("PL")[0]
-                X.append(x)
-            else:
-                # NOTE: we could replace this with NaNs as well to signify missing data...
-                X.append(np.zeros(shape=(len(vcf.samples), 3)))
-    X = np.hstack(X)
+        if v.is_snp and (len(v.ALT) == 1):
+            x = v.format("PL")[0]
+            X.append(x)
+        else:
+            # NOTE: we could replace these with NaNs as well to signify missing data...
+            X.append(np.zeros(shape=(len(vcf.samples), 3)))
+    X = np.stack(X)
     return X
