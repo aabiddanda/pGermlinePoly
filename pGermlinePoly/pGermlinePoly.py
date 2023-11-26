@@ -2,6 +2,7 @@
 import numpy as np
 from poly_utils import complete_loglik, geno_loglik, log_prior, logsumexp
 from scipy.optimize import minimize
+from scipy.stats import beta, binom, norm, poisson, rv_histogram, uniform
 
 
 class ProbGermline:
@@ -119,18 +120,25 @@ class ProbGermline:
 class ClonalSim:
     """A class for simulating clonal sequencing data."""
 
-    def __init__(self, n_sites=50e6, n_clones=10):
+    def __init__(self, seq_len=50e6, n_clones=10):
         """Initialize the class for a simulation of clonal samples."""
-        assert n_sites > 0
-        assert n_clones > 0
+        assert seq_len > 0
+        assert n_clones > 1
         assert isinstance(n_clones, int)
-        assert isinstance(n_sites, float) or isinstance(n_sites, int)
-        self.K = n_sites
+        assert isinstance(seq_len, float) or isinstance(seq_len, int)
+        self.seq_len = seq_len
+        self.K = None
         self.J = n_clones
         self.genealogy = None
 
     def simulate_germline(
-        self, afs=None, mean_coverage=15.0, var_coverage=5.0, mut_rate=1.2e-8
+        self,
+        afs=None,
+        mean_coverage=15.0,
+        var_coverage=5.0,
+        mut_rate=1.2e-8,
+        q=30,
+        seed=42,
     ):
         """Simulate a new germline sample.
 
@@ -139,28 +147,81 @@ class ClonalSim:
             - mean_coverage (`float`): mean coverage of germline sample.
             - var_coverage (`float`): variance in coverage of germline sample.
             - mut_rate (`float`): rate of denovo mutations per-genome.
-
-        Return:
-            - gl_dict (`dict`): dictionary of mutations (position, (ref_reads, alt_reads), gls)).
+            - q (`float`): average quality of reads on phred-scale.
+            - seed (`float`): random number seed.
+        Returns:
+            - ClonalSim object
         """
         assert mean_coverage > 0
         assert var_coverage > 0
         assert mut_rate > 0
-        pass
+        assert seed > 0
+        np.random.seed(seed)
+        # Simulate the total number of heterozygous sites
+        if afs is None:
+            # Draw from a uniform distribution ...
+            ps = beta.rvs(1, 1, size=int(self.seq_len))
+        else:
+            # This is the case where we actually have an AFS ...
+            assert afs.size > 10
+            rv = rv_histogram(
+                np.histogram(afs, bins=np.min([1000, afs.size / 20]).astype(np.int32))
+            )
+            ps = rv.rvs(size=int(self.seq_len))
+        # simulate genotypes under an HWE assumption
+        gts = binom.rvs(2, p=ps)
+        n_hets = np.sum(gts == 1)
+        if n_hets == 0:
+            raise ValueError("No heterozygotes simulated!")
+        # simulate some denovo mutations
+        denovo_muts = poisson.rvs(mu=self.seq_len * mut_rate)
+        # Assign positions, afs categories
+        tot_muts = n_hets + denovo_muts
+        mut_pos = uniform.rvs(loc=0, scale=self.seq_len, size=tot_muts)
+        mut_af = np.zeros(tot_muts)
+        mut_af[:n_hets] = ps[gts == 1]
+        mut_tot_reads = np.zeros(tot_muts, dtype=int)
+        mut_alt_reads = np.zeros(tot_muts, dtype=int)
+        # Sample the total number of reads approximately from a normal distribution
+        mut_tot_reads = np.round(
+            norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=tot_muts)
+        )
+        mut_tot_reads[mut_tot_reads <= 0] = 0
+        for i in range(tot_muts):
+            if mut_tot_reads[i] > 0:
+                # Heterozygotes should have ~50% chance of being the alternative read
+                mut_alt_reads[i] = binom.rvs(n=mut_tot_reads[i], p=0.5)
 
-    def simulate_clones(self, age=45):
-        """Simulate a number of clonal samples under a neutral conditional-coalescent model.
+        # Set all of the simulation object definitions
+        self.germline_muts = mut_pos
+        self.germline_af = mut_af
+        self.germline_tot_reads = mut_tot_reads
+        self.germline_af
+
+    def simulate_clones(self, age=45, seed=42):
+        """Simulate a number of clonal samples under a neutral bounded-coalescent model.
 
         Arguments:
             - age (`int`): the age of the individual at time of sampling.
+            - seed (`int`): the random seed for simulating data
+        Returns:
+            - networkx object reflecting the joint genealogy simulated under a bounded coalescent model
         """
         assert age > 0.0
+        assert self.J > 1
+        assert seed > 0
         pass
 
-    def sim_somatic_mutations(self, mut_rate=6e-6):
-        """Simulate somatic mutations on branches of a somatic genealogy."""
+    def sim_somatic_mutations(self, mut_rate=6e-6, seed=42):
+        """Simulate somatic mutations on branches of a latent somatic genealogy.
+
+        Arguments:
+            - mut_rate (`float`): the somatic mutation rate in terms of /bp/year
+            - seed (`int`): random number seed.
+        """
         assert self.genealogy is not None
         assert mut_rate > 0.0
+        assert seed > 0
         pass
 
     def write_vcf(self):

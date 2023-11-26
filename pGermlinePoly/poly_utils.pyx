@@ -1,4 +1,6 @@
-from libc.math cimport erf, exp, log, pi, sqrt
+from libc.math cimport erf, exp, log, log10, pi, sqrt
+
+import numpy as np
 
 
 cdef double sqrt2 = sqrt(2.);
@@ -35,8 +37,19 @@ cpdef double log_prior(double [:] l, double[:] a):
         xk += l[i]*a[i]
     return 1.0 / (1.0 + exp(xk))
 
+cdef double[:] phred_rescale(double[:] raw_gl):
+    """Perform phred-based rescaling of the genotype likelihoods."""
+    cdef double min_gl;
+    cdef int i, n;
+    min_gl = 1e24
+    n = raw_gl.size
+    norm_gl = [-log10(exp(x)) for x in raw_gl]
+    for i in range(n):
+        min_gl = min(min_gl, norm_gl[i])
+    norm_gl = [x - min_gl for x in norm_gl]
+    return norm_gl
 
-cpdef double geno_loglik(int alt_reads, int tot_reads, int a1=0, int a2=0, int q=30):
+cdef double geno_gl(int alt_reads, int tot_reads, int a1=0, int a2=0, double q=30.0):
     """Cython implementation of genotype likelihoods under the GATK model.
 
     Arguments:
@@ -44,7 +57,7 @@ cpdef double geno_loglik(int alt_reads, int tot_reads, int a1=0, int a2=0, int q
         - tot_reads (`int`): number of total reads.
         - a1 (`int`): first allelic state.
         - a2 (`int`): second allelic state.
-        - q (`int`): Phred-scaled read quality.
+        - q (`float`): Phred-scaled read quality.
     Returns:
         - gl (`float`): genotype likelihood.
     """
@@ -63,9 +76,18 @@ cpdef double geno_loglik(int alt_reads, int tot_reads, int a1=0, int a2=0, int q
         gl += log(0.5*((1 - eps)*(a1 == 0) + (eps/3)*(a1 == 1)) + 0.5*((1 - eps)*(a2 == 0) + (eps/3)*(a2 == 1)))
     return gl
 
+cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
+    """Actual genotype likelihood computation."""
+    cdef double[:] norm_gl;
+    raw_gl = np.array([0.0, 0.0, 0.0])
+    raw_gl[0] = geno_gl(alt_reads, tot_reads, a1=0, a2=0, q=q)
+    raw_gl[1] = 2*geno_gl(alt_reads, tot_reads, a1=1, a2=0, q=q)
+    raw_gl[2] = geno_gl(alt_reads, tot_reads, a1=1, a2=1, q=q)
+    norm_gl = phred_rescale(raw_gl)
+    return norm_gl
 
 cpdef double complete_loglik(int K, double[:] lambdas, double[:,:] Theta, double[:,:,:] X):
-    """Cython helper for computing the full-data log-likelihood."""
+    """Cython helper for computing the full-data log-likelihood for pGermlinePoly."""
     cdef double logll = 0.0;
     cdef int k;
     for k in range(K):
