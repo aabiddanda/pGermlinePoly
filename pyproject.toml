@@ -5,6 +5,7 @@ requires = [
     "cython",
     "scipy",
     "numpy",
+    "msprime",
     "cyvcf2",
     "cerberus",
     "extension-helpers"
@@ -18,7 +19,7 @@ description = "\"Statistical method to estimate the posterior probability of ger
 keywords = [ "somatic", "mutation", "cancer"]
 classifiers = ["Development Status :: 3 - Alpha", "Intended Audience :: Science/Research", "Programming Language :: Python :: 3"]
 requires-python = ">= 3.9"
-dependencies = [ "numpy", "scipy", "pandas", "Cython", "Click", "cyvcf2", "cerberus"]
+dependencies = [ "numpy", "scipy", "msprime", "Cython", "Click", "cyvcf2", "cerberus"]
 dynamic = ["version"]
 authors = [{name = "Arjun Biddanda", email = "aabiddanda@gmail.com"}]
 

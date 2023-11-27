@@ -1,4 +1,5 @@
 """Inference and simulation of germline polymorphism in clonal sequencing data."""
+import msprime
 import numpy as np
 from poly_utils import complete_loglik, geno_loglik, log_prior, logsumexp
 from scipy.optimize import minimize
@@ -120,7 +121,7 @@ class ProbGermline:
 class ClonalSim:
     """A class for simulating clonal sequencing data."""
 
-    def __init__(self, seq_len=50e6, n_clones=10):
+    def __init__(self, seq_len=1e7, n_clones=10):
         """Initialize the class for a simulation of clonal samples."""
         assert seq_len > 0
         assert n_clones > 1
@@ -167,7 +168,7 @@ class ClonalSim:
             rv = rv_histogram(
                 np.histogram(afs, bins=np.min([1000, afs.size / 20]).astype(np.int32))
             )
-            ps = rv.rvs(size=int(self.seq_len))
+            ps = rv.rvs(size=int(self.seq_len / 1e3))
         # simulate genotypes under an HWE assumption
         gts = binom.rvs(2, p=ps)
         n_hets = np.sum(gts == 1)
@@ -198,7 +199,7 @@ class ClonalSim:
         self.germline_tot_reads = mut_tot_reads
         self.germline_af
 
-    def simulate_clones(self, age=45, seed=42):
+    def simulate_clone_genealogy(self, age=45, seed=42):
         """Simulate a number of clonal samples under a neutral bounded-coalescent model.
 
         Arguments:
@@ -210,28 +211,47 @@ class ClonalSim:
         assert age > 0.0
         assert self.J > 1
         assert seed > 0
-        # Simulate exponentially distributed coalescent times.
-        j = self.J
-        ts = []
-        while j > 1:
-            tx = expon.rvs(scale=(j * (j - 1)) / 2.0)
-            ts.append(tx)
-            j -= 1
-        ts = np.array(ts)
-        # TODO: rescale the branch-lengths to years & sample a topology via networkx
-        pass
+        # This simulates a single locus genealogy for clones from a given age
+        # NOTE: this is under Ne = 1.0 so we can rescale the branch-lengths accordingly ...
+        ts = msprime.sim_ancestry(samples=self.J, ploidy=1, random_seed=42)
+        self.genealogy = ts.at(0.0)
 
-    def sim_somatic_mutations(self, mut_rate=6e-6, seed=42):
+    def sim_somatic_mutations(
+        self, age=45, mut_rate=6e-6, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
+    ):
         """Simulate somatic mutations on branches of a latent somatic genealogy.
 
         Arguments:
-            - mut_rate (`float`): the somatic mutation rate in terms of /bp/year
+            - age (`int`): the age of the individual in years
+            - mut_rate (`float`): the somatic mutation rate in terms of /bp/year (note this is the diploid rate)
+            - mean_coverage (`float`): mean coverage for clone.
+            - var_coverage (`float`): variance in coverage for clone.
+            - q (`int`): phred-scaled read-quality.
             - seed (`int`): random number seed.
         """
         assert self.genealogy is not None
+        assert age > 0.0
         assert mut_rate > 0.0
         assert seed > 0
-        pass
+        assert mean_coverage > 0.0
+        assert var_coverage > 0.0
+        assert q > 0
+        # Strong check that the appropriate number of leaves are available ...
+        assert self.genealogy.leaves(self.genealogy.root) == self.J
+        # Obtain the height of the tree and set as the age
+        # NOTE: this is a little improper as the somatic lineages
+        #    may have coalesced well before the actual age of the sample
+        g_height = self.genealogy.time(self.genealogy.root)
+        scale_factor = age / g_height
+        # Iterate through the branches of the genealogy
+        for n in self.genealogy.nodes():
+            # Get the branch-length
+            bl = self.genealogy.branch_length(n)
+            e_mut = mut_rate * bl * self.seq_len
+            n_mut = poisson.rv(mu=e_mut)
+            if n_mut > 0:
+                # We have a somatic mutation!
+                pass
 
     def write_vcf(self):
         """Write the VCF with clonal samples out."""
