@@ -194,10 +194,11 @@ class ClonalSim:
                 mut_alt_reads[i] = binom.rvs(n=mut_tot_reads[i], p=0.5)
 
         # Set all of the simulation object definitions
+        self.n_germline_poly = tot_muts
         self.germline_muts = mut_pos
         self.germline_af = mut_af
         self.germline_tot_reads = mut_tot_reads
-        self.germline_af
+        self.germline_alt_reads = mut_alt_reads
 
     def simulate_clone_genealogy(self, age=45, seed=42):
         """Simulate a number of clonal samples under a neutral bounded-coalescent model.
@@ -217,7 +218,7 @@ class ClonalSim:
         self.genealogy = ts.at(0.0)
 
     def sim_somatic_mutations(
-        self, age=45, mut_rate=6e-6, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
+        self, age=45, mut_rate=5e-9, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
     ):
         """Simulate somatic mutations on branches of a latent somatic genealogy.
 
@@ -236,6 +237,7 @@ class ClonalSim:
         assert mean_coverage > 0.0
         assert var_coverage > 0.0
         assert q > 0
+        np.random.seed(seed)
         # Strong check that the appropriate number of leaves are available ...
         assert self.genealogy.num_leaves(self.genealogy.root) == self.J
         # Obtain the height of the tree and set as the age
@@ -244,14 +246,45 @@ class ClonalSim:
         g_height = self.genealogy.time(self.genealogy.root)
         scale_factor = age / g_height
         # Iterate through the branches of the genealogy
+        n_somatic_mut = 0
+        mut_pos = []
+        mut_af = []
+        mut_tot_reads = []
+        mut_alt_reads = []
         for n in self.genealogy.nodes():
-            # Get the branch-length
+            # Get the branch-length and simulate the number of mutations on this branch
             bl = self.genealogy.branch_length(n)
             e_mut = mut_rate * bl * self.seq_len
             n_mut = poisson.rv(mu=e_mut)
             if n_mut > 0:
-                # We have a somatic mutation!
-                pass
+                n_somatic_mut += n_mut
+                leaves = np.array([l for l in self.genealogy.leaves(n)])
+                for _ in range(n_mut):
+                    # Sample the position of the variant ...
+                    cur_pos = uniform.rvs(loc=0, scale=self.seq_len)
+                    # Sample total read-counts for the
+                    cur_tot_reads = np.round(
+                        norm.rvs(
+                            loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J
+                        )
+                    )
+                    cur_alt_reads = np.zeros(mut_tot_reads.size)
+                    for l in leaves:
+                        # NOTE: in this simulation all somatic mutations are heterozygotes?
+                        mut_alt_reads[l] = binom.rvs(n=mut_tot_reads[l], p=0.5)
+                    mut_pos.append(cur_pos)
+                    mut_af.append(0.0)
+                    mut_tot_reads.append(cur_tot_reads)
+                    mut_alt_reads.append(cur_alt_reads)
+        mut_pos = np.array(mut_pos)
+        mut_af = np.array(mut_af)
+        mut_tot_reads = np.vstack(mut_tot_reads)
+        mut_alt_reads = np.vstack(mut_alt_reads)
+        self.n_somatic_mut = n_somatic_mut
+        self.somatic_muts = mut_pos
+        self.somatic_af = mut_af
+        self.somatic_tot_reads = mut_tot_reads
+        self.somatic_alt_reads = mut_alt_reads
 
     def write_vcf(self):
         """Write the VCF with clonal samples out."""
