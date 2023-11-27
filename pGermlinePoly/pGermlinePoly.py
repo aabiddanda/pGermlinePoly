@@ -2,7 +2,7 @@
 import numpy as np
 from poly_utils import complete_loglik, geno_loglik, log_prior, logsumexp
 from scipy.optimize import minimize
-from scipy.stats import beta, binom, norm, poisson, rv_histogram, uniform
+from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
 
 
 class ProbGermline:
@@ -210,6 +210,15 @@ class ClonalSim:
         assert age > 0.0
         assert self.J > 1
         assert seed > 0
+        # Simulate exponentially distributed coalescent times.
+        j = self.J
+        ts = []
+        while j > 1:
+            tx = expon.rvs(scale=(j * (j - 1)) / 2.0)
+            ts.append(tx)
+            j -= 1
+        ts = np.array(ts)
+        # TODO: rescale the branch-lengths to years & sample a topology via networkx
         pass
 
     def sim_somatic_mutations(self, mut_rate=6e-6, seed=42):
