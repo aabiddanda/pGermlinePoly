@@ -14,3 +14,12 @@ def test_clonal_sim(seqlen, n):
     clone_sim = ClonalSim(seq_len=seqlen, n_clones=n)
     assert clone_sim.seq_len == seqlen
     assert clone_sim.J == n
+
+
+@pytest.mark.parametrize("seqlen,n", [(1e6, 2), (1e6, 1000), (1e6, 50), (1e6, 500)])
+def test_genealogy(seqlen, n):
+    clone_sim = ClonalSim(seq_len=seqlen, n_clones=n)
+    assert clone_sim.seq_len == seqlen
+    assert clone_sim.J == n
+    clone_sim.simulate_clone_genealogy()
+    assert clone_sim.genealogy.num_samples(clone_sim.genealogy.root) == clone_sim.J

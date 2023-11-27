@@ -237,7 +237,7 @@ class ClonalSim:
         assert var_coverage > 0.0
         assert q > 0
         # Strong check that the appropriate number of leaves are available ...
-        assert self.genealogy.leaves(self.genealogy.root) == self.J
+        assert self.genealogy.num_leaves(self.genealogy.root) == self.J
         # Obtain the height of the tree and set as the age
         # NOTE: this is a little improper as the somatic lineages
         #    may have coalesced well before the actual age of the sample
