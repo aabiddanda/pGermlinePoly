@@ -188,10 +188,7 @@ class ClonalSim:
             norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=tot_muts)
         ).astype(int)
         mut_tot_reads[mut_tot_reads <= 0] = 0
-        for i in range(tot_muts):
-            if mut_tot_reads[i] > 0:
-                # Heterozygotes should have ~50% chance of being the alternative read
-                mut_alt_reads[i] = binom.rvs(n=mut_tot_reads[i], p=0.5)
+        mut_alt_reads = binom.rvs(n=mut_tot_reads, p=0.5)
 
         # Set all of the simulation object definitions
         self.n_germline_poly = tot_muts
@@ -269,10 +266,10 @@ class ClonalSim:
                             loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J
                         )
                     )
-                    cur_alt_reads = np.zeros(mut_tot_reads.size)
+                    cur_alt_reads = np.zeros(mut_tot_reads.size, dtype=int)
                     for lv in leaves:
                         # NOTE: in this simulation all somatic mutations are heterozygotes?
-                        mut_alt_reads[l] = binom.rvs(n=mut_tot_reads[lv], p=0.5)
+                        mut_alt_reads[lv] = binom.rvs(n=mut_tot_reads[lv], p=0.5)
                     mut_pos.append(cur_pos)
                     mut_af.append(0.0)
                     mut_tot_reads.append(cur_tot_reads)
@@ -305,10 +302,11 @@ class ClonalSim:
             cur_tot_reads = np.round(
                 norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J)
             )
+            cur_tot_reads[cur_tot_reads <= 0] = 0
             # NOTE: this could break due to
             cur_alt_reads = binom.rvs(n=cur_tot_reads, p=0.5)
             germline_clone_tot_reads[i, :] = cur_tot_reads
-            germline_clone_alt_reads[i, :] = cut_alt_reads
+            germline_clone_alt_reads[i, :] = cur_alt_reads
         # Store the clonal genotypes below ...
         self.germline_clone_tot_reads = germline_clone_tot_reads
         self.germline_clone_alt_reads = germline_clone_alt_reads
