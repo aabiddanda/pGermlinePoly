@@ -186,7 +186,7 @@ class ClonalSim:
         # Sample the total number of reads approximately from a normal distribution
         mut_tot_reads = np.round(
             norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=tot_muts)
-        )
+        ).astype(int)
         mut_tot_reads[mut_tot_reads <= 0] = 0
         for i in range(tot_muts):
             if mut_tot_reads[i] > 0:
@@ -195,6 +195,7 @@ class ClonalSim:
 
         # Set all of the simulation object definitions
         self.n_germline_poly = tot_muts
+        self.n_denovo_muts = denovo_muts
         self.germline_muts = mut_pos
         self.germline_af = mut_af
         self.germline_tot_reads = mut_tot_reads
@@ -258,7 +259,7 @@ class ClonalSim:
             n_mut = poisson.rv(mu=e_mut)
             if n_mut > 0:
                 n_somatic_mut += n_mut
-                leaves = np.array([l for l in self.genealogy.leaves(n)])
+                leaves = np.array([lv for lv in self.genealogy.leaves(n)])
                 for _ in range(n_mut):
                     # Sample the position of the variant ...
                     cur_pos = uniform.rvs(loc=0, scale=self.seq_len)
@@ -269,9 +270,9 @@ class ClonalSim:
                         )
                     )
                     cur_alt_reads = np.zeros(mut_tot_reads.size)
-                    for l in leaves:
+                    for lv in leaves:
                         # NOTE: in this simulation all somatic mutations are heterozygotes?
-                        mut_alt_reads[l] = binom.rvs(n=mut_tot_reads[l], p=0.5)
+                        mut_alt_reads[l] = binom.rvs(n=mut_tot_reads[lv], p=0.5)
                     mut_pos.append(cur_pos)
                     mut_af.append(0.0)
                     mut_tot_reads.append(cur_tot_reads)
@@ -285,6 +286,32 @@ class ClonalSim:
         self.somatic_af = mut_af
         self.somatic_tot_reads = mut_tot_reads
         self.somatic_alt_reads = mut_alt_reads
+
+    def simulate_clonal_germline_muts(
+        self, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
+    ):
+        """Simulate germline mutations in the clonal samples."""
+        assert mean_coverage > 0
+        assert var_coverage > 0
+        assert q > 0
+        assert seed > 0
+        assert self.n_germline_poly > 0
+        assert self.J > 1
+        np.random.seed(seed)
+        germline_clone_tot_reads = np.zeros(shape=(self.n_germline_poly, self.J))
+        germline_clone_alt_reads = np.zeros(shape=(self.n_germline_poly, self.J))
+        # Sample for each of
+        for i in range(self.n_germline_poly):
+            cur_tot_reads = np.round(
+                norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J)
+            )
+            # NOTE: this could break due to
+            cur_alt_reads = binom.rvs(n=cur_tot_reads, p=0.5)
+            germline_clone_tot_reads[i, :] = cur_tot_reads
+            germline_clone_alt_reads[i, :] = cut_alt_reads
+        # Store the clonal genotypes below ...
+        self.germline_clone_tot_reads = germline_clone_tot_reads
+        self.germline_clone_alt_reads = germline_clone_alt_reads
 
     def write_vcf(self):
         """Write the VCF with clonal samples out."""
