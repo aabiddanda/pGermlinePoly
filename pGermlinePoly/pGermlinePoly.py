@@ -241,7 +241,7 @@ class ClonalSim:
         assert q > 0
         np.random.seed(seed)
         # Strong check that the appropriate number of leaves are available ...
-        assert self.genealogy.num_leaves(self.genealogy.root) == self.J
+        assert self.genealogy.num_samples(self.genealogy.root) == self.J
         # Obtain the height of the tree and set as the age
         # NOTE: this is a little improper as the somatic lineages
         #    may have coalesced well before the actual age of the sample
@@ -269,7 +269,7 @@ class ClonalSim:
                         norm.rvs(
                             loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J
                         )
-                    )
+                    ).astype(int)
                     cur_alt_reads = np.zeros(mut_tot_reads.size, dtype=int)
                     for lv in leaves:
                         # NOTE: in this simulation all somatic mutations are heterozygotes?
@@ -287,8 +287,15 @@ class ClonalSim:
         self.somatic_af = mut_af
         self.somatic_tot_reads = mut_tot_reads
         self.somatic_alt_reads = mut_alt_reads
-        # If there are somatic mutations - estimate the pl field for them?
-        # If there are somatic mutations - add them to the germline sample?
+        # If there are somatic mutations - estimate the pl field & add to the germline sample as ref ...
+        if self.n_somatic_mut > 0:
+            somatic_mut_pl = np.zeros(shape=(n_somatic_mut, self.J, 3))
+            for i in range(n_somatic_mut):
+                for j in range(self.J):
+                    somatic_mut_pl[i, j, :] = geno_loglik(
+                        self.somatic_alt_reads[i, j], self.somatic_tot_reads[i, j], q=q
+                    )
+            self.somatic_mut_pl = somatic_mut_pl
 
     def simulate_clonal_germline_muts(
         self, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
@@ -314,9 +321,39 @@ class ClonalSim:
             cur_alt_reads = binom.rvs(n=cur_tot_reads, p=0.5)
             germline_clone_tot_reads[i, :] = cur_tot_reads
             germline_clone_alt_reads[i, :] = cur_alt_reads
+            for j in range(self.J):
+                germline_clone_pl[i, j, :] = geno_loglik(
+                    germline_clone_alt_reads[i, j], germline_clone_tot_reads[i, j], q=q
+                )
         # Store the clonal genotypes below ...
         self.germline_clone_tot_reads = germline_clone_tot_reads
         self.germline_clone_alt_reads = germline_clone_alt_reads
+        self.germline_clone_pl = germline_clone_pl
+
+    def simulate_germline_somatic_muts(
+        self, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
+    ):
+        """Simulate the somatic mutations in the germline context."""
+        assert self.n_somatic_mut >= 0
+        assert mean_coverage > 0
+        assert var_coverage > 0
+        assert q > 0
+        assert seed > 0
+        np.random.seed(seed)
+        somatic_tot_reads = np.zeros(self.n_somatic_mut, dtype=int)
+        somatic_alt_reads = np.zeros(self.n_somatic_mut, dtype=int)
+        somatic_pl = np.zeros(shape=(self.n_somatic_mut, 2))
+        for i in range(self.n_somatic_mut):
+            somatic_tot_reads[i] = np.round(
+                norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage))
+            ).astype(int)
+            somatic_alt_reads[i] = binom.rvs(n=somatic_tot_reads[i], p=0.0)
+            somatic_pl[i, :] = geno_loglik(
+                somatic_alt_reads[i], somatic_tot_reads[i], q=q
+            )
+        self.germline_somatic_tot_reads = somatic_tot_reads
+        self.germline_somatic_alt_reads = somatic_alt_reads
+        self.germline_somatic_pl = somatic_pl
 
     def write_vcf(self):
         """Write the VCF with clonal samples out."""
