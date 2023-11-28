@@ -183,20 +183,24 @@ class ClonalSim:
         mut_af[:n_hets] = ps[gts == 1]
         mut_tot_reads = np.zeros(tot_muts, dtype=int)
         mut_alt_reads = np.zeros(tot_muts, dtype=int)
+        mut_pl = np.zeros(shape=(tot_muts, 3))
         # Sample the total number of reads approximately from a normal distribution
         mut_tot_reads = np.round(
             norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=tot_muts)
         ).astype(int)
         mut_tot_reads[mut_tot_reads <= 0] = 0
         mut_alt_reads = binom.rvs(n=mut_tot_reads, p=0.5)
-
-        # Set all of the simulation object definitions
+        for i, (a, t) in enumerate(zip(mut_alt_reads, mut_tot_reads)):
+            # Estimate the genotyoe PL field based on this ...
+            mut_pl[i, :] = geno_loglik(a, t, q=q)
+        # Set all of the simulation object definitions for germline polymophism ...
         self.n_germline_poly = tot_muts
         self.n_denovo_muts = denovo_muts
         self.germline_muts = mut_pos
         self.germline_af = mut_af
         self.germline_tot_reads = mut_tot_reads
         self.germline_alt_reads = mut_alt_reads
+        self.germline_pl = mut_pl
 
     def simulate_clone_genealogy(self, age=45, seed=42):
         """Simulate a number of clonal samples under a neutral bounded-coalescent model.
@@ -283,6 +287,8 @@ class ClonalSim:
         self.somatic_af = mut_af
         self.somatic_tot_reads = mut_tot_reads
         self.somatic_alt_reads = mut_alt_reads
+        # If there are somatic mutations - estimate the pl field for them?
+        # If there are somatic mutations - add them to the germline sample?
 
     def simulate_clonal_germline_muts(
         self, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
@@ -297,6 +303,7 @@ class ClonalSim:
         np.random.seed(seed)
         germline_clone_tot_reads = np.zeros(shape=(self.n_germline_poly, self.J))
         germline_clone_alt_reads = np.zeros(shape=(self.n_germline_poly, self.J))
+        germline_clone_pl = np.zeros(shape=(self.n_germline_poly, self.J, 3))
         # Sample for each of
         for i in range(self.n_germline_poly):
             cur_tot_reads = np.round(

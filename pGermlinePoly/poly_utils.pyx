@@ -46,7 +46,7 @@ cdef double[:] phred_rescale(double[:] raw_gl):
     norm_gl = [-log10(exp(x)) for x in raw_gl]
     for i in range(n):
         min_gl = min(min_gl, norm_gl[i])
-    norm_gl = [x - min_gl for x in norm_gl]
+    norm_gl = np.array([x - min_gl for x in norm_gl])
     return norm_gl
 
 cdef double geno_gl(int alt_reads, int tot_reads, int a1=0, int a2=0, double q=30.0):
