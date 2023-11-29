@@ -257,7 +257,7 @@ class ClonalSim:
             # Get the branch-length and simulate the number of mutations on this branch
             bl = self.genealogy.branch_length(n)
             e_mut = mut_rate * bl * self.seq_len
-            n_mut = poisson.rv(mu=e_mut)
+            n_mut = poisson.rvs(mu=e_mut)
             if n_mut > 0:
                 n_somatic_mut += n_mut
                 leaves = np.array([lv for lv in self.genealogy.leaves(n)])
@@ -270,10 +270,10 @@ class ClonalSim:
                             loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J
                         )
                     ).astype(int)
-                    cur_alt_reads = np.zeros(mut_tot_reads.size, dtype=int)
+                    cur_alt_reads = np.zeros(self.J, dtype=int)
                     for lv in leaves:
                         # NOTE: in this simulation all somatic mutations are heterozygotes?
-                        mut_alt_reads[lv] = binom.rvs(n=mut_tot_reads[lv], p=0.5)
+                        cur_alt_reads[lv] = binom.rvs(n=cur_tot_reads[lv], p=0.5)
                     mut_pos.append(cur_pos)
                     mut_af.append(0.0)
                     mut_tot_reads.append(cur_tot_reads)
@@ -300,7 +300,7 @@ class ClonalSim:
     def simulate_clonal_germline_muts(
         self, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
     ):
-        """Simulate germline mutations in the clonal samples."""
+        """Simulate germline mutations in all of the clonal samples."""
         assert mean_coverage > 0
         assert var_coverage > 0
         assert q > 0
@@ -308,14 +308,18 @@ class ClonalSim:
         assert self.n_germline_poly > 0
         assert self.J > 1
         np.random.seed(seed)
-        germline_clone_tot_reads = np.zeros(shape=(self.n_germline_poly, self.J))
-        germline_clone_alt_reads = np.zeros(shape=(self.n_germline_poly, self.J))
+        germline_clone_tot_reads = np.zeros(
+            shape=(self.n_germline_poly, self.J), dtype=int
+        )
+        germline_clone_alt_reads = np.zeros(
+            shape=(self.n_germline_poly, self.J), dtype=int
+        )
         germline_clone_pl = np.zeros(shape=(self.n_germline_poly, self.J, 3))
-        # Sample for each of
+        # Can we make these slightly faster?
         for i in range(self.n_germline_poly):
             cur_tot_reads = np.round(
                 norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J)
-            )
+            ).astype(int)
             cur_tot_reads[cur_tot_reads <= 0] = 0
             # NOTE: this could break due to
             cur_alt_reads = binom.rvs(n=cur_tot_reads, p=0.5)
@@ -342,7 +346,7 @@ class ClonalSim:
         np.random.seed(seed)
         somatic_tot_reads = np.zeros(self.n_somatic_mut, dtype=int)
         somatic_alt_reads = np.zeros(self.n_somatic_mut, dtype=int)
-        somatic_pl = np.zeros(shape=(self.n_somatic_mut, 2))
+        somatic_pl = np.zeros(shape=(self.n_somatic_mut, 3))
         for i in range(self.n_somatic_mut):
             somatic_tot_reads[i] = np.round(
                 norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage))

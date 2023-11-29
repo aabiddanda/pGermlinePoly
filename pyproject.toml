@@ -32,6 +32,7 @@ tests = [ "pytest", "pytest-cov", "hypothesis", "flake8", "sphinx"]
 
 [project.scripts]
 pGermlinePoly = "pGermlinePoly.cli:main"
+somatic-sim = "pGermlinePoly.sim_cli:main"
 
 [tool.setuptools]
 zip-safe = false

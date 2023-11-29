@@ -1,4 +1,4 @@
-"""CLI for karyohmm."""
+"""CLI for pGermlinePoly Estimation in VCF."""
 import logging
 import sys
 
