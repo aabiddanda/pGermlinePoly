@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 germline_schema = {
     "ind": {"required": True, "type": "string"},
-    "sex": {"required": True, "type": "string"},
+    "sex": {"required": True, "type": "string", "maxlength": 1, "allowed": ["M", "F"]},
     "age": {"required": True, "type": "integer", "min": 0},
     "germline": {"required": True, "type": "list", "schema": {"type": "string"}},
     "clones": {"required": True, "type": "list", "schema": {"type": "string"}},

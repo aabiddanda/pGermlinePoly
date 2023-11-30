@@ -54,7 +54,7 @@ def test_somatic_germline_mutgen(seqlen, n):
     assert np.any(clone_sim.germline_somatic_pl != 0)
 
 
-@pytest.mark.parametrize("seqlen,n", [(10e6, 10)])
+@pytest.mark.parametrize("seqlen,n", [(1e6, 10)])
 def test_full_germline_somatic_sim(seqlen, n):
     clone_sim = ClonalSim(seq_len=seqlen, n_clones=n)
     clone_sim.simulate_germline()

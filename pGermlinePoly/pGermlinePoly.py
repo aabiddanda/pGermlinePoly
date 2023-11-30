@@ -160,8 +160,8 @@ class ClonalSim:
         np.random.seed(seed)
         # Simulate the total number of heterozygous sites
         if afs is None:
-            # Draw from a uniform distribution ...
-            ps = beta.rvs(1, 1, size=int(self.seq_len))
+            # Draw from a uniform distribution (with a rough approximation of human heterozygosity)
+            ps = beta.rvs(1, 1, size=int(self.seq_len / 1e3))
         else:
             # This is the case where we actually have an AFS ...
             assert afs.size > 10
@@ -280,8 +280,12 @@ class ClonalSim:
                     mut_alt_reads.append(cur_alt_reads)
         mut_pos = np.array(mut_pos)
         mut_af = np.array(mut_af)
-        mut_tot_reads = np.vstack(mut_tot_reads)
-        mut_alt_reads = np.vstack(mut_alt_reads)
+        if len(mut_tot_reads) > 0:
+            mut_tot_reads = np.vstack(mut_tot_reads)
+            mut_alt_reads = np.vstack(mut_alt_reads)
+        else:
+            mut_tot_reads = np.zeros(self.J)
+            mut_alt_reads = np.zeros(self.J)
         self.n_somatic_mut = n_somatic_mut
         self.somatic_muts = mut_pos
         self.somatic_af = mut_af
@@ -316,15 +320,22 @@ class ClonalSim:
         )
         germline_clone_pl = np.zeros(shape=(self.n_germline_poly, self.J, 3))
         # Can we make these slightly faster?
+        germline_clone_tot_reads = (
+            np.round(
+                norm.rvs(
+                    loc=mean_coverage,
+                    scale=np.sqrt(var_coverage),
+                    size=int(self.J * self.n_germline_poly),
+                )
+            )
+            .astype(int)
+            .reshape((self.n_germline_poly, self.J))
+        )
+        germline_clone_tot_reads[germline_clone_tot_reads <= 0] = 0
         for i in range(self.n_germline_poly):
-            cur_tot_reads = np.round(
-                norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J)
-            ).astype(int)
-            cur_tot_reads[cur_tot_reads <= 0] = 0
-            # NOTE: this could break due to
-            cur_alt_reads = binom.rvs(n=cur_tot_reads, p=0.5)
-            germline_clone_tot_reads[i, :] = cur_tot_reads
-            germline_clone_alt_reads[i, :] = cur_alt_reads
+            germline_clone_alt_reads[i, :] = binom.rvs(
+                n=germline_clone_tot_reads[i, :], p=0.5
+            )
             for j in range(self.J):
                 germline_clone_pl[i, j, :] = geno_loglik(
                     germline_clone_alt_reads[i, j], germline_clone_tot_reads[i, j], q=q
@@ -359,6 +370,25 @@ class ClonalSim:
         self.germline_somatic_alt_reads = somatic_alt_reads
         self.germline_somatic_pl = somatic_pl
 
-    def write_vcf(self):
+    def write_vcf(self, out=None):
         """Write the VCF with clonal samples out."""
-        pass
+        vcf_header = """##fileformat=VCFv4.2
+        ##FILTER=<ID=PASS,Description="All filters passed">
+        ##ALT=<ID=NON_REF,Description="Represents any possible alternative allele not already represented at this location by REF and ALT">
+        ##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+        ##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
+        ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+        ##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification">
+        ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes, for each ALT allele, in the same order as listed">
+        ##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
+        ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+        ##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth; some reads may have been filtered">
+        ##contig=<ID=chr1,length=248956422>
+        #CHROM  POS ID  REF ALT QUAL    FILTER  INFO    FORMAT  A-Bulk  A-clone1    A-clone2
+        """
+        sample_header = "\t".join(
+            ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"]
+            + [f"Agermline"]
+            + [f"Aclone{i}" for i in range(self.J)]
+        )
+        raise NotImplementedError("No implementation for vcf output yet!")
