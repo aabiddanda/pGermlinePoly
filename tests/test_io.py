@@ -103,8 +103,7 @@ def test_bad_config_strings(tmp_path):
 
 
 # --------- 2. Testing VCFs ---------- #
-good_vcf_string = """
-##fileformat=VCFv4.2
+good_vcf_string = """##fileformat=VCFv4.2
 ##FILTER=<ID=PASS,Description="All filters passed">
 ##ALT=<ID=NON_REF,Description="Represents any possible alternative allele not already represented at this location by REF and ALT">
 ##FILTER=<ID=LowQual,Description="Low quality">
@@ -179,7 +178,7 @@ good_vcf_string = """
 ##bcftools_viewCommand=view -r chr21 --threads 8 -O z -o ShortTLProject.trimmed_samples.VQSR.chr21.vcf.gz ShortTLProject.trimmed_samples.VQSR.vcf.gz; Date=Tue Nov 14 12:14:42 2023
 ##bcftools_viewVersion=1.18+htslib-1.18
 ##bcftools_viewCommand=view -v snps -m2 -M2 --threads 4 ShortTLProject.trimmed_samples.VQSR.chr21.vcf.gz; Date=Wed Nov 22 22:19:49 2023
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A-bulk	A-clone1	A-clone2
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A-Bulk	A-clone1	A-clone2
 chr21	5030625	.	G	C	60.92	PASS	AC=0;AF=0.001773;AN=354;BaseQRankSum=0;DP=1411;ExcessHet=0;FS=0;InbreedingCoeff=0.4763;MLEAC=2;MLEAF=0.003546;MQ=48.76;MQRankSum=1.38;NEGATIVE_TRAIN_SITE;QD=15.23;ReadPosRankSum=0.674;SOR=0.693;VQSLOD=-1.88;culprit=MQ	GT:AD:DP:GQ:PGT:PID:PL:PS	0/0:0,0:0:0:.:.:0,0,0:.	0/0:11,0:11:33:.:.:0,33,433:.	0/0:8,0:8:24:.:.:0,24,247:.
 """
 
@@ -192,7 +191,9 @@ germline:
 clones:
   - A-clone1
   - A-clone2
-annotations: []
+annotations:
+  - MLEAF
+  - MQ
 """
 
 

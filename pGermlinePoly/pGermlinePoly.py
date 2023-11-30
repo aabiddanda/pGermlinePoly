@@ -4,7 +4,7 @@ import numpy as np
 from poly_utils import complete_loglik, geno_loglik, log_prior, logsumexp
 from scipy.optimize import minimize
 from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
-
+from tqdm import tqdm
 
 class ProbGermline:
     """Class to estimate the posterior probability of germline polymorphism from somatic data."""
@@ -316,15 +316,22 @@ class ClonalSim:
         )
         germline_clone_pl = np.zeros(shape=(self.n_germline_poly, self.J, 3))
         # Can we make these slightly faster?
+        germline_clone_tot_reads = (
+            np.round(
+                norm.rvs(
+                    loc=mean_coverage,
+                    scale=np.sqrt(var_coverage),
+                    size=int(self.J * self.n_germline_poly),
+                )
+            )
+            .astype(int)
+            .reshape((self.n_germline_poly, self.J))
+        )
+        germline_clone_tot_reads[germline_clone_tot_reads <= 0] = 0
         for i in range(self.n_germline_poly):
-            cur_tot_reads = np.round(
-                norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J)
-            ).astype(int)
-            cur_tot_reads[cur_tot_reads <= 0] = 0
-            # NOTE: this could break due to
-            cur_alt_reads = binom.rvs(n=cur_tot_reads, p=0.5)
-            germline_clone_tot_reads[i, :] = cur_tot_reads
-            germline_clone_alt_reads[i, :] = cur_alt_reads
+            germline_clone_alt_reads[i, :] = binom.rvs(
+                n=germline_clone_tot_reads[i, :], p=0.5
+            )
             for j in range(self.J):
                 germline_clone_pl[i, j, :] = geno_loglik(
                     germline_clone_alt_reads[i, j], germline_clone_tot_reads[i, j], q=q
@@ -347,7 +354,7 @@ class ClonalSim:
         somatic_tot_reads = np.zeros(self.n_somatic_mut, dtype=int)
         somatic_alt_reads = np.zeros(self.n_somatic_mut, dtype=int)
         somatic_pl = np.zeros(shape=(self.n_somatic_mut, 3))
-        for i in range(self.n_somatic_mut):
+        for i in tqdm(range(self.n_somatic_mut)):
             somatic_tot_reads[i] = np.round(
                 norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage))
             ).astype(int)
@@ -361,4 +368,4 @@ class ClonalSim:
 
     def write_vcf(self):
         """Write the VCF with clonal samples out."""
-        pass
+        raise NotImplementedError("No implementation yet!")
