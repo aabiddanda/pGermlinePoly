@@ -7,7 +7,7 @@ from cyvcf2 import VCF
 from tqdm import tqdm
 
 from pGermlinePoly import ProbGermline
-from pGermlinePoly.io import *
+from pGermlinePoly.io import *  # noqa
 
 # Setup the logging configuration for the CLI
 logging.basicConfig(

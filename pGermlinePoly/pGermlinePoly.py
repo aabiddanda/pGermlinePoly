@@ -370,25 +370,166 @@ class ClonalSim:
         self.germline_somatic_alt_reads = somatic_alt_reads
         self.germline_somatic_pl = somatic_pl
 
+    def create_gt_string(self, alt_reads=0, tot_reads=0, pl=np.array([0, 0, 0])):
+        """Create a genotype-string."""
+        gt_str = "0/0"
+        gt = 0
+        an = 2
+        if tot_reads >= 4 and alt_reads > 1:
+            gt_str = "0/1"
+            gt = 1
+        if tot_reads < 2:
+            gt_str = "./."
+            an = 0
+        ad_str = f"{tot_reads - alt_reads},{alt_reads}"
+        dp_str = f"{tot_reads}"
+        pl_str = ",".join([str(int(p)) for p in pl])
+        return f"{gt_str}:{ad_str}:{dp_str}:{pl_str}", gt, an, tot_reads
+
     def write_vcf(self, out=None):
         """Write the VCF with clonal samples out."""
-        vcf_header = """##fileformat=VCFv4.2
-        ##FILTER=<ID=PASS,Description="All filters passed">
-        ##ALT=<ID=NON_REF,Description="Represents any possible alternative allele not already represented at this location by REF and ALT">
-        ##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
-        ##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
-        ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
-        ##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification">
-        ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes, for each ALT allele, in the same order as listed">
-        ##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
-        ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
-        ##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth; some reads may have been filtered">
-        ##contig=<ID=chr1,length=248956422>
-        #CHROM  POS ID  REF ALT QUAL    FILTER  INFO    FORMAT  A-Bulk  A-clone1    A-clone2
-        """
-        sample_header = "\t".join(
-            ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"]
-            + [f"Agermline"]
-            + [f"Aclone{i}" for i in range(self.J)]
+        vcf_header = f"""##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##ALT=<ID=NON_REF,Description="Represents any possible alternative allele not already represented at this location by REF and ALT">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth.">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification">
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes, for each ALT allele, in the same order as listed">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth; some reads may have been filtered">
+##INFO=<ID=SM,Number=1,Type=Integer,Description="Somatic mutation indicator.">
+##contig=<ID=chr1,length={int(self.seq_len)}>
+"""
+        sample_header = (
+            "\t".join(
+                [
+                    "#CHROM",
+                    "POS",
+                    "ID",
+                    "REF",
+                    "ALT",
+                    "QUAL",
+                    "FILTER",
+                    "INFO",
+                    "FORMAT",
+                ]
+                + ["Agermline"]
+                + [f"Aclone{i}" for i in range(self.J)]
+            )
+            + "\n"
         )
-        raise NotImplementedError("No implementation for vcf output yet!")
+        germline_var_strings = []
+        cur_ref = "A"
+        cur_alt = "T"
+        cur_chrom = "chr1"
+        # 1. Create strings for the germline mutations
+        for i in range(self.n_germline_poly):
+            cur_nalt = 0
+            cur_nonmissing = 0
+            cur_dp = []
+            cur_pos = int(self.germline_muts[i])
+            germline_alt_reads = self.germline_alt_reads[i]
+            germline_tot_reads = self.germline_tot_reads[i]
+            germline_pl = self.germline_pl[i, :]
+            germline_str, gt, an, dp = self.create_gt_string(
+                germline_alt_reads, germline_tot_reads, germline_pl
+            )
+            cur_nalt += gt
+            cur_nonmissing += an
+            cur_dp.append(dp)
+            # Now creating the strings for germline variants in the somatic clones
+            clone_gt_str = []
+            for j in range(self.J):
+                somatic_alt_reads = self.germline_clone_alt_reads[i, j]
+                somatic_tot_reads = self.germline_clone_tot_reads[i, j]
+                somatic_pl = self.germline_clone_pl[i, j, :]
+                somatic_str, gt, an, dp = self.create_gt_string(
+                    somatic_alt_reads, somatic_tot_reads, somatic_pl
+                )
+                clone_gt_str.append(somatic_str)
+                cur_nalt += gt
+                cur_nonmissing += an
+                cur_dp.append(dp)
+            # Setting the info string here ...
+            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};SM=0"
+            # Collapsing all of this into string output for this VCF record ...
+            cur_var_str = (
+                "\t".join(
+                    [
+                        cur_chrom,
+                        str(cur_pos),
+                        f"{cur_chrom}:{str(cur_pos)}:{cur_ref}:{cur_alt}",
+                        cur_ref,
+                        cur_alt,
+                        "50.0",
+                        "PASS",
+                        info_str,
+                        "GT:AD:DP:PL",
+                        germline_str,
+                    ]
+                    + clone_gt_str
+                )
+                + "\n"
+            )
+            germline_var_strings.append(cur_var_str)
+        # Create the same thing for the somatic mutations...
+        somatic_var_strings = []
+        for i in range(self.n_somatic_mut):
+            cur_nalt = 0
+            cur_nonmissing = 0
+            cur_dp = []
+            cur_pos = int(self.somatic_muts[i])
+            germline_alt_reads = self.germline_somatic_alt_reads[i]
+            germline_tot_reads = self.germline_somatic_tot_reads[i]
+            germline_pl = self.germline_somatic_pl[i, :]
+            germline_str, gt, an, dp = self.create_gt_string(
+                germline_alt_reads, germline_tot_reads, germline_pl
+            )
+            cur_nalt += gt
+            cur_nonmissing += an
+            cur_dp.append(dp)
+            # Now creating the strings for germline variants in the somatic clones
+            clone_gt_str = []
+            for j in range(self.J):
+                somatic_alt_reads = self.somatic_alt_reads[i, j]
+                somatic_tot_reads = self.somatic_tot_reads[i, j]
+                somatic_pl = self.somatic_mut_pl[i, j, :]
+                somatic_str, gt, an, dp = self.create_gt_string(
+                    somatic_alt_reads, somatic_tot_reads, somatic_pl
+                )
+                clone_gt_str.append(somatic_str)
+                cur_nalt += gt
+                cur_nonmissing += an
+                cur_dp.append(dp)
+            # Setting the info string here ...
+            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};SM=1"
+            # Collapsing all of this into string output for this VCF record ...
+            cur_var_str = (
+                "\t".join(
+                    [
+                        cur_chrom,
+                        str(cur_pos),
+                        f"{cur_chrom}:{cur_pos}:{cur_ref}:{cur_alt}",
+                        cur_ref,
+                        cur_alt,
+                        "50.0",
+                        "PASS",
+                        info_str,
+                        "GT:AD:DP:PL",
+                        germline_str,
+                    ]
+                    + clone_gt_str
+                )
+                + "\n"
+            )
+            somatic_var_strings.append(cur_var_str)
+        # 2. Create strings for the somatic variants
+        with open(out, "wt") as out_stream:
+            out_stream.write(vcf_header)
+            out_stream.write(sample_header)
+            for g_str in germline_var_strings:
+                out_stream.write(g_str)
+            for s_str in somatic_var_strings:
+                out_stream.write(s_str)

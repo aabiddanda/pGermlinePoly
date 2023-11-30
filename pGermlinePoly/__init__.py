@@ -8,7 +8,7 @@ Modules exported are:
 * ClonalSim: class for simulating clonal sequencing datasets
 """
 
-__version__ = "0.0.1a"
+__version__ = "0.0.1b"
 
-from .io import *
+from .io import *  # noqa
 from .pGermlinePoly import ClonalSim, ProbGermline
