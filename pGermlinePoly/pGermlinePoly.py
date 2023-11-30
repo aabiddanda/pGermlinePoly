@@ -370,6 +370,25 @@ class ClonalSim:
         self.germline_somatic_alt_reads = somatic_alt_reads
         self.germline_somatic_pl = somatic_pl
 
-    def write_vcf(self):
+    def write_vcf(self, out=None):
         """Write the VCF with clonal samples out."""
-        raise NotImplementedError("No implementation yet!")
+        vcf_header = """##fileformat=VCFv4.2
+        ##FILTER=<ID=PASS,Description="All filters passed">
+        ##ALT=<ID=NON_REF,Description="Represents any possible alternative allele not already represented at this location by REF and ALT">
+        ##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+        ##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
+        ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+        ##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification">
+        ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes, for each ALT allele, in the same order as listed">
+        ##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
+        ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+        ##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth; some reads may have been filtered">
+        ##contig=<ID=chr1,length=248956422>
+        #CHROM  POS ID  REF ALT QUAL    FILTER  INFO    FORMAT  A-Bulk  A-clone1    A-clone2
+        """
+        sample_header = "\t".join(
+            ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"]
+            + [f"Agermline"]
+            + [f"Aclone{i}" for i in range(self.J)]
+        )
+        raise NotImplementedError("No implementation for vcf output yet!")
