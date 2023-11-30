@@ -4,7 +4,7 @@ import numpy as np
 from poly_utils import complete_loglik, geno_loglik, log_prior, logsumexp
 from scipy.optimize import minimize
 from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
-from tqdm import tqdm
+
 
 class ProbGermline:
     """Class to estimate the posterior probability of germline polymorphism from somatic data."""
@@ -160,8 +160,8 @@ class ClonalSim:
         np.random.seed(seed)
         # Simulate the total number of heterozygous sites
         if afs is None:
-            # Draw from a uniform distribution ...
-            ps = beta.rvs(1, 1, size=int(self.seq_len))
+            # Draw from a uniform distribution (with a rough approximation of human heterozygosity)
+            ps = beta.rvs(1, 1, size=int(self.seq_len / 1e3))
         else:
             # This is the case where we actually have an AFS ...
             assert afs.size > 10
@@ -280,8 +280,12 @@ class ClonalSim:
                     mut_alt_reads.append(cur_alt_reads)
         mut_pos = np.array(mut_pos)
         mut_af = np.array(mut_af)
-        mut_tot_reads = np.vstack(mut_tot_reads)
-        mut_alt_reads = np.vstack(mut_alt_reads)
+        if len(mut_tot_reads) > 0:
+            mut_tot_reads = np.vstack(mut_tot_reads)
+            mut_alt_reads = np.vstack(mut_alt_reads)
+        else:
+            mut_tot_reads = np.zeros(self.J)
+            mut_alt_reads = np.zeros(self.J)
         self.n_somatic_mut = n_somatic_mut
         self.somatic_muts = mut_pos
         self.somatic_af = mut_af
@@ -354,7 +358,7 @@ class ClonalSim:
         somatic_tot_reads = np.zeros(self.n_somatic_mut, dtype=int)
         somatic_alt_reads = np.zeros(self.n_somatic_mut, dtype=int)
         somatic_pl = np.zeros(shape=(self.n_somatic_mut, 3))
-        for i in tqdm(range(self.n_somatic_mut)):
+        for i in range(self.n_somatic_mut):
             somatic_tot_reads[i] = np.round(
                 norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage))
             ).astype(int)
