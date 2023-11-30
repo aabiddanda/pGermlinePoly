@@ -88,3 +88,4 @@ def test_vcf_output_full_sim(tmp_path):
     reread_vcf = VCF(vcf_fp)
     assert reread_vcf.contains("AD")
     assert reread_vcf.contains("PL")
+    assert len(reread_vcf.samples) == 5 + 1
