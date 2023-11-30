@@ -2,7 +2,14 @@ import pytest
 import yaml
 from cyvcf2 import VCF
 
-from pGermlinePoly.io import check_annotations, check_samples, validate_config
+from pGermlinePoly.io import (
+    check_annotations,
+    check_samples,
+    create_anno,
+    create_clonal_pl_matrix,
+    create_germline_anno,
+    validate_config,
+)
 
 # -------- 1. Testing Configs --------- #
 good_config = """
@@ -211,3 +218,22 @@ def test_validate_vcf(tmp_path):
     cur_vcf = VCF(vcf_fp, samples=samples)
     check_samples(cur_vcf, samples=samples)
     check_annotations(cur_vcf, annotations=annotations)
+
+
+def test_annotation_extractions(tmp_path):
+    """Run through a full validation of the VCF protocol."""
+    d = tmp_path / "real_vcf_test"
+    d.mkdir()
+    config_fp = d / "config.yaml"
+    config_fp.write_text(good_config_real)
+    vcf_fp = d / "test.vcf"
+    vcf_fp.write_text(good_vcf_string)
+    config = validate_config(config_fp)
+    samples = config["clones"]
+    annotations = config["annotations"]
+    clone_vcf = VCF(vcf_fp, samples=samples)
+    X = create_clonal_pl_matrix(clone_vcf)
+    assert X.shape[2] == 2
+
+
+# TODO: write some tests for the annotation tests
