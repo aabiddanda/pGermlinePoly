@@ -136,7 +136,8 @@ class ClonalSim:
 
     def simulate_germline(
         self,
-        afs=None,
+        afs=[0.31699444395046117, 6.067159920986527],
+        het_rate=1e-3,
         mean_coverage=15.0,
         var_coverage=5.0,
         mut_rate=1.2e-8,
@@ -146,7 +147,7 @@ class ClonalSim:
         """Simulate a new germline sample.
 
         Arguments:
-            - afs (`np.array`): distribution of allele frequencys in the population (external).
+            - afs (`np.array`): parameters of a beta distribution of allele frequencys in the population (external).
             - mean_coverage (`float`): mean coverage of germline sample.
             - var_coverage (`float`): variance in coverage of germline sample.
             - mut_rate (`float`): rate of denovo mutations per-genome.
@@ -160,29 +161,26 @@ class ClonalSim:
         assert mut_rate > 0
         assert seed > 0
         np.random.seed(seed)
-        # Simulate the total number of heterozygous sites
-        if afs is None:
-            # Draw from a uniform distribution (with a rough approximation of human heterozygosity)
-            ps = beta.rvs(1, 1, size=int(self.seq_len / 1e3))
-        else:
-            # This is the case where we actually have an AFS ...
-            assert afs.size > 10
-            rv = rv_histogram(
-                np.histogram(afs, bins=np.min([1000, afs.size / 20]).astype(np.int32))
-            )
-            ps = rv.rvs(size=int(self.seq_len / 1e3))
-        # simulate genotypes under an HWE assumption
-        gts = binom.rvs(2, p=ps)
-        n_hets = np.sum(gts == 1)
+        # Estimate the number of heterozygotes per-bp as a Poisson random variable
+        n_hets = poisson.rvs(mu=self.seq_len * het_rate)
         if n_hets == 0:
             raise ValueError("No heterozygotes simulated!")
+        # Simulate the total number of heterozygous sites
+        if afs is None:
+            # Draw from a uniform beta prior + single-het observation posterior distribution
+            ps = beta.rvs(1 + 1, 1 + 1, size=n_hets)
+        elif len(afs) == 2:
+            # Draw from the posterior distribution of single heterozygotes ...
+            ps = beta.rvs(1 + afs[0], 1 + afs[1], size=n_hets)
+        else:
+            raise ValueError("Format / Type for AFS is incorrect!")
         # simulate some denovo mutations
         denovo_muts = poisson.rvs(mu=self.seq_len * mut_rate)
         # Assign positions, afs categories
         tot_muts = n_hets + denovo_muts
         mut_pos = uniform.rvs(loc=0, scale=self.seq_len, size=tot_muts)
         mut_af = np.zeros(tot_muts)
-        mut_af[:n_hets] = ps[gts == 1]
+        mut_af[:n_hets] = ps
         mut_tot_reads = np.zeros(tot_muts, dtype=int)
         mut_alt_reads = np.zeros(tot_muts, dtype=int)
         mut_pl = np.zeros(shape=(tot_muts, 3))
@@ -193,7 +191,7 @@ class ClonalSim:
         mut_tot_reads[mut_tot_reads <= 0] = 0
         mut_alt_reads = binom.rvs(n=mut_tot_reads, p=0.5)
         for i, (a, t) in enumerate(zip(mut_alt_reads, mut_tot_reads)):
-            # Estimate the genotyoe PL field based on this ...
+            # Estimate the genotype PL field based on this ...
             mut_pl[i, :] = geno_loglik(a, t, q=q)
         # Set all of the simulation object definitions for germline polymophism ...
         self.n_germline_poly = tot_muts

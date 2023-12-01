@@ -45,6 +45,25 @@ logging.basicConfig(
     help="Age of individual from clonal sampling.",
 )
 @click.option(
+    "--afs_alpha",
+    type=float,
+    default=0.31699444395046117,
+    help="Estimate of alpha parameter for allele frequency - default from NFE AF in gnomAD v3",
+)
+@click.option(
+    "--afs_beta",
+    type=float,
+    default=6.067159920986527,
+    help="Estimate of beta parameter for allele frequency - default from NFE AF in gnomAD v3",
+)
+@click.option(
+    "--germline_het",
+    "-het",
+    type=float,
+    default=1e-3,
+    help="Heterozygosity rate (per bp)",
+)
+@click.option(
     "--germline_mu",
     "-mu",
     type=float,
@@ -126,6 +145,9 @@ def main(
     seqlen,
     nclones,
     age,
+    afs_alpha,
+    afs_beta,
+    germline_het,
     germline_mu,
     somatic_mu,
     mean_germline_cov,
@@ -148,6 +170,8 @@ def main(
     )
     # NOTE: we currently don't really support AFS input or an estimated heterozygosity rate for scaling ...
     clone_sim.simulate_germline(
+        afs=[afs_alpha, afs_beta],
+        het_rate=germline_het,
         mean_coverage=mean_germline_cov,
         var_coverage=var_germline_cov,
         mut_rate=germline_mu,
