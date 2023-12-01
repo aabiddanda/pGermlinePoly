@@ -8,7 +8,7 @@ cdef double sqrt2pi = sqrt(2*pi);
 cdef double logsqrt2pi = log(1/sqrt2pi)
 
 
-cdef double logaddexp(double a, double b):
+cpdef double logaddexp(double a, double b):
     """Log-add exponential for two values."""
     cdef double m;
     cdef double c;

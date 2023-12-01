@@ -1,7 +1,7 @@
 """Inference and simulation of germline polymorphism in clonal sequencing data."""
 import msprime
 import numpy as np
-from poly_utils import complete_loglik, geno_loglik, log_prior, logsumexp
+from poly_utils import complete_loglik, geno_loglik, log_prior, logaddexp, logsumexp
 from scipy.optimize import minimize
 from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
 
@@ -32,14 +32,14 @@ class ProbGermline:
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
-    def post_prob_poly(self, lambdas=np.array([-1, -2])):
+    def post_prob_poly(self, lambdas=np.array([-1, -2], dtype="double")):
         """Posterior probability of being germline polymorphic.
 
         Arguments:
             - lambdas (`np.array`): weight parameters for logistic priors.
 
         Returns:
-            - post_k (`np.array`): posterior probability of site being germline polymorphic.
+            - post_k (`np.array`): posterior probability (logged) of site being germline polymorphic.
 
         """
         assert lambdas.size == self.A
@@ -50,9 +50,11 @@ class ProbGermline:
             pi_k = log_prior(lambdas, self.Theta[k, :])
             # Compute the posterior as an average across all the clones
             # NOTE: we assume that X contains the log-likelihood GL values...
-            post_poly_k = np.log(pi_k) + np.sum(self.X[k, :, 1:-1])
-            post_nonpoly_k = np.log(1.0 - pi_k) + np.sum(self.X[k, :, [0, -1]])
-            post_k[k] = post_poly_k - logsumexp([post_poly_k, post_nonpoly_k])
+            post_poly_k = np.log(pi_k) + np.sum(np.max(self.X[k, :, 1:-1], axis=1))
+            post_nonpoly_k = np.log(1.0 - pi_k) + np.sum(
+                np.max(self.X[k, :, [0, -1]], axis=1)
+            )
+            post_k[k] = post_poly_k - logaddexp(post_poly_k, post_nonpoly_k)
         return post_k
 
     def complete_logll(self, lambdas=np.array([-1, -2])):
