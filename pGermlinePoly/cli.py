@@ -17,7 +17,10 @@ logging.basicConfig(
 )
 
 
-@click.command()
+@click.command(
+    help="Inference of probability of annotation-informed germline polymorphism from somatic sequencing data.",
+    context_settings=dict(show_default=True),
+)
 @click.option(
     "--vcf",
     "-v",
@@ -30,7 +33,7 @@ logging.basicConfig(
     "-c",
     required=True,
     type=click.Path(exists=True),
-    help="Input file detailing clone structure.",
+    help="Input config file detailing clone structure.",
 )
 @click.option(
     "--nthreads",

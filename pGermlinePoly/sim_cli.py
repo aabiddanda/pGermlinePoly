@@ -16,7 +16,10 @@ logging.basicConfig(
 )
 
 
-@click.command()
+@click.command(
+    help="Simulation engine for neutral clonal sequencing data with a germline sample.",
+    context_settings=dict(show_default=True),
+)
 @click.option(
     "--seqlen",
     "-l",
@@ -136,8 +139,14 @@ def main(
     out_tree,
 ):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
+    logging.info(
+        f"Setting up somatic simulation object for {nclones} clones over {seqlen} basepairs"
+    )
     clone_sim = ClonalSim(seq_len=seqlen, n_clones=nclones)
-    # NOTE: should decide on the AFS format too ...
+    logging.info(
+        f"Simulating germline variants with {mean_germline_cov} ({var_germline_cov}) coverage ..."
+    )
+    # NOTE: we currently don't really support AFS input or an estimated heterozygosity rate for scaling ...
     clone_sim.simulate_germline(
         mean_coverage=mean_germline_cov,
         var_coverage=var_germline_cov,
@@ -145,6 +154,8 @@ def main(
         q=germline_q,
         seed=seed,
     )
+    logging.info(f"Simulated  {clone_sim.n_germline_poly} germline variants ... ")
+    logging.info(f"Simulating a clonal genealogy for {nclones}...")
     clone_sim.simulate_clone_genealogy(age=age, seed=seed)
     clone_sim.sim_somatic_mutations(
         age=age,
@@ -154,20 +165,28 @@ def main(
         q=clone_q,
         seed=seed,
     )
+    logging.info(
+        f"Simulated {clone_sim.n_somatic_mut} somatic mutations for an individual of age {age}!"
+    )
+    logging.info(f"Filling in germline mutation status for {nclones} clones!")
     clone_sim.simulate_germline_somatic_muts(
         mean_coverage=mean_germline_cov,
         var_coverage=var_germline_cov,
         q=germline_q,
         seed=seed,
     )
+    logging.info("Filling in somatic mutation status for the germline sample!")
     clone_sim.simulate_clonal_germline_muts(
         mean_coverage=mean_clone_cov, var_coverage=var_clone_cov, q=clone_q, seed=seed
     )
     # Setup the output VCF file and write it out
+    logging.info(f"Writing out the VCF file to {out}")
     clone_sim.write_vcf(out=out)
-
     # Optionally write out the tree file if it is provided
     if out_tree is not None:
+        logging.info(
+            f"Writing out the (unscaled) somatic cellular phylogeny to {out_tree}!"
+        )
         with open(out_tree, "w+") as tree_out:
             n_str = clone_sim.genealogy.newick(precision=3)
             tree_out.write(n_str)
