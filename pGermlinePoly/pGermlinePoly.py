@@ -57,7 +57,7 @@ class ProbGermline:
             post_k[k] = post_poly_k - logaddexp(post_poly_k, post_nonpoly_k)
         return post_k
 
-    def complete_logll(self, lambdas=np.array([-1, -2])):
+    def complete_logll(self, lambdas=np.array([-1, -2], dtype="double")):
         """Compute the complete data log-likelihood.
 
         Arguments:
@@ -72,7 +72,7 @@ class ProbGermline:
         logll = complete_loglik(self.K, lambdas, self.Theta, self.X)
         return logll
 
-    def incomplete_logll(self, gammas_k, lambdas=np.array([-1, -3])):
+    def incomplete_logll(self, gammas_k, lambdas=np.array([-1, -3], dtype="double")):
         """Compute the incomplete-data log-likelihood for optimization.
 
         Note: this assumes that you have the posteriors pre-computed.
@@ -93,7 +93,7 @@ class ProbGermline:
         assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
         opt_res = minimize(
             lambda x: -self.incomplete_logll(gammas_k=gammas_k, lambdas=x),
-            x0=[0 for _ in range(self.A)],
+            x0=np.array([0.0 for _ in range(self.A)], dtype="double"),
             method=algo,
             bounds=[(-100.0, 100.0) for k in range(self.A)],
             tol=1e-4,
@@ -102,7 +102,7 @@ class ProbGermline:
         lambda_hat = opt_res.x
         return lambda_hat
 
-    def em_algo(self, lambdas=np.array([-1, -2]), delta_logll=1e-2):
+    def em_algo(self, lambdas=np.array([-1, -2], dtype="double"), delta_logll=1e-2):
         """EM-algorithm to estimate parameters for prior of germline polymorphism."""
         assert lambdas.size == self.A
         lambdas_prev = lambdas

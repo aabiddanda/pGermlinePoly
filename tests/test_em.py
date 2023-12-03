@@ -58,3 +58,20 @@ def test_post_prob_poly():
     # The first value should be more likely to be a germline variant ...
     assert post_k[0] > post_k[1]
     assert np.exp(post_k[0]) > np.exp(post_k[1])
+
+
+def test_complete_logll():
+    """Test the implementation of the complete log-likelihood for a very small test-case."""
+    X = np.array(
+        [
+            [invert_pl([1, 0, 20]), invert_pl([3, 0, 2])],
+            [invert_pl([0, 20, 40]), invert_pl([0, 1, 2])],
+        ],
+        dtype="double",
+    )
+    Theta = np.array([[1.0, 1.0], [1.0, 1.0]], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    logll1 = prob_germline.complete_logll()
+    logll2 = prob_germline.complete_logll(lambdas=np.array([-10, 2], dtype="double"))
+    assert logll1 >= logll2

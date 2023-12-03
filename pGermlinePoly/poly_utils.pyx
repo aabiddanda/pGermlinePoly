@@ -93,5 +93,5 @@ cpdef double complete_loglik(int K, double[:] lambdas, double[:,:] Theta, double
     for k in range(K):
         pi_k = log_prior(lambdas, Theta[k, :])
         # Compute the likelihood as a sum across sites
-        logll += logaddexp(log(pi_k) + sum(X[k, :, 1:-1]), log(1.0 - pi_k) + sum(X[k, :, 0]) + sum(X[k, :, -1]))
+        logll += logaddexp(log(pi_k) + np.sum(X[k, :, 1:-1]), log(1.0 - pi_k) + np.sum(X[k, :, 0]) + np.sum(X[k, :, -1]))
     return logll
