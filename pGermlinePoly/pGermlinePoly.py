@@ -397,6 +397,7 @@ class ClonalSim:
 ##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification">
 ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes, for each ALT allele, in the same order as listed">
 ##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
+##INFO=<ID=ExternalAF,Number=A,Type=Float,Description="Global Allele Frequency, for each ALT allele, from external population reference">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
 ##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth; some reads may have been filtered">
 ##INFO=<ID=SM,Number=1,Type=Integer,Description="Somatic mutation indicator.">
@@ -439,6 +440,7 @@ class ClonalSim:
             cur_nalt += gt
             cur_nonmissing += an
             cur_dp.append(dp)
+            external_af = self.germline_af[i]
             # Now creating the strings for germline variants in the somatic clones
             clone_gt_str = []
             for j in range(self.J):
@@ -453,7 +455,7 @@ class ClonalSim:
                 cur_nonmissing += an
                 cur_dp.append(dp)
             # Setting the info string here ...
-            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};SM=0"
+            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};ExternalAF={external_af};SM=0"
             # Collapsing all of this into string output for this VCF record ...
             cur_var_str = (
                 "\t".join(
@@ -492,6 +494,7 @@ class ClonalSim:
             cur_dp.append(dp)
             # Now creating the strings for germline variants in the somatic clones
             clone_gt_str = []
+            external_af = self.somatic_af[i]
             for j in range(self.J):
                 somatic_alt_reads = self.somatic_alt_reads[i, j]
                 somatic_tot_reads = self.somatic_tot_reads[i, j]
@@ -504,7 +507,7 @@ class ClonalSim:
                 cur_nonmissing += an
                 cur_dp.append(dp)
             # Setting the info string here ...
-            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};SM=1"
+            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};ExternalAF={external_af};SM=1"
             # Collapsing all of this into string output for this VCF record ...
             cur_var_str = (
                 "\t".join(
