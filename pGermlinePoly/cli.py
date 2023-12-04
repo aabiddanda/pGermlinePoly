@@ -85,7 +85,7 @@ def main(vcf, config, nthreads, out):
     logging.info("Estimating posterior probability of germline heterozygosity...")
     pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
     logging.info(f"Writing VCF output to {out} w/ ppGermlinePoly...")
-    out_vcf = VCF(vcf, samples=samples, nthreads=nthreads)
+    out_vcf = VCF(vcf, samples=samples, threads=nthreads)
     out_vcf.add_info_to_header(
         {
             "ID": "ppGermlinePoly",
