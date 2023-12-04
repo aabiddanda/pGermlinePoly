@@ -95,7 +95,7 @@ class ProbGermline:
             method=algo,
             bounds=[(-100.0, 100.0) for k in range(self.A)],
             tol=1e-4,
-            options={"disp": True, "ftol": 1e-4, "xtol": 1e-4},
+            options={"disp": False, "ftol": 1e-4, "xtol": 1e-4},
         )
         lambda_hat = opt_res.x
         return lambda_hat
@@ -115,7 +115,7 @@ class ProbGermline:
             loglls.append(self.complete_logll(lambdas=lambdas_hat))
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
-        return loglls, prev_lambdas
+        return np.array(loglls), prev_lambdas
 
 
 class ClonalSim:

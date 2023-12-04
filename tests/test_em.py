@@ -75,3 +75,44 @@ def test_complete_logll():
     logll1 = prob_germline.complete_logll(lambdas=np.array([2, 2], dtype="double"))
     logll2 = prob_germline.complete_logll(lambdas=np.array([-3, -1], dtype="double"))
     assert logll2 >= logll1
+
+
+def test_incomplete_logll():
+    """Test the incomplete log-likelihood for a small test case."""
+    X = np.array(
+        [
+            [invert_pl([1, 0, 20]), invert_pl([3, 0, 2])],
+            [invert_pl([0, 2, 4]), invert_pl([0, 1, 2])],
+        ],
+        dtype="double",
+    )
+    Theta = np.array([[2.0, 1.0], [1.0, 1.0]], dtype="double")
+    gammas = np.array([0.5, 0.5], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    logll1 = prob_germline.incomplete_logll(
+        gammas_k=gammas, lambdas=np.array([2, 2], dtype="double")
+    )
+    logll2 = prob_germline.incomplete_logll(
+        gammas_k=gammas, lambdas=np.array([-3, 0], dtype="double")
+    )
+    assert logll2 >= logll1
+
+
+def test_em_algo():
+    """Test out the full EM-algorithm."""
+    X = np.array(
+        [
+            [invert_pl([1, 0, 20]), invert_pl([3, 0, 2])],
+            [invert_pl([0, 2, 4]), invert_pl([0, 1, 2])],
+        ],
+        dtype="double",
+    )
+    Theta = np.array([[2.0, 1.0], [1.0, 1.0]], dtype="double")
+    gammas = np.array([0.5, 0.5], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    loglls, lambda_hats = prob_germline.em_algo(delta_logll=1e-4)
+    # Basically we want to assure that it is increasing ...
+    assert loglls.size > 1
+    assert loglls[1] >= loglls[0]
