@@ -50,10 +50,8 @@ class ProbGermline:
             pi_k = log_prior(lambdas, self.Theta[k, :])
             # Compute the posterior as an average across all the clones
             # NOTE: we assume that X contains the log-likelihood GL values...
-            post_poly_k = np.log(pi_k) + np.sum(np.max(self.X[k, :, 1:-1], axis=1))
-            post_nonpoly_k = np.log(1.0 - pi_k) + np.sum(
-                np.max(self.X[k, :, [0, -1]], axis=1)
-            )
+            post_poly_k = np.log(pi_k) + np.sum(self.X[k, :, 1:-1])
+            post_nonpoly_k = np.log(1.0 - pi_k) + np.sum(self.X[k, :, [0, -1]])
             post_k[k] = post_poly_k - logaddexp(post_poly_k, post_nonpoly_k)
         return post_k
 
@@ -372,6 +370,7 @@ class ClonalSim:
 
     def create_gt_string(self, alt_reads=0, tot_reads=0, pl=np.array([0, 0, 0])):
         """Create a genotype-string."""
+        assert pl.size > 1
         gt_str = "0/0"
         gt = 0
         an = 2
@@ -384,7 +383,9 @@ class ClonalSim:
         ad_str = f"{tot_reads - alt_reads},{alt_reads}"
         dp_str = f"{tot_reads}"
         pl_str = ",".join([str(int(p)) for p in pl])
-        return f"{gt_str}:{ad_str}:{dp_str}:{pl_str}", gt, an, tot_reads
+        gq = np.sort(pl)[1] - np.sort(pl)[0]
+        gq_str = f"{int(gq)}"
+        return f"{gt_str}:{ad_str}:{dp_str}:{gq_str}:{pl_str}", gt, an, tot_reads, gq
 
     def write_vcf(self, out=None):
         """Write the VCF with clonal samples out."""
@@ -395,6 +396,7 @@ class ClonalSim:
 ##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth.">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 ##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
 ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes, for each ALT allele, in the same order as listed">
 ##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
 ##INFO=<ID=ExternalAF,Number=A,Type=Float,Description="Global Allele Frequency, for each ALT allele, from external population reference">
@@ -430,11 +432,12 @@ class ClonalSim:
             cur_nalt = 0
             cur_nonmissing = 0
             cur_dp = []
+            tot_gq = 0.0
             cur_pos = int(self.germline_muts[i])
             germline_alt_reads = self.germline_alt_reads[i]
             germline_tot_reads = self.germline_tot_reads[i]
             germline_pl = self.germline_pl[i, :]
-            germline_str, gt, an, dp = self.create_gt_string(
+            germline_str, gt, an, dp, gq = self.create_gt_string(
                 germline_alt_reads, germline_tot_reads, germline_pl
             )
             cur_nalt += gt
@@ -447,12 +450,13 @@ class ClonalSim:
                 somatic_alt_reads = self.germline_clone_alt_reads[i, j]
                 somatic_tot_reads = self.germline_clone_tot_reads[i, j]
                 somatic_pl = self.germline_clone_pl[i, j, :]
-                somatic_str, gt, an, dp = self.create_gt_string(
+                somatic_str, gt, an, dp, gq = self.create_gt_string(
                     somatic_alt_reads, somatic_tot_reads, somatic_pl
                 )
                 clone_gt_str.append(somatic_str)
                 cur_nalt += gt
                 cur_nonmissing += an
+                tot_gq += gq
                 cur_dp.append(dp)
             # Setting the info string here ...
             info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};ExternalAF={external_af};SM=0"
@@ -465,10 +469,10 @@ class ClonalSim:
                         f"{cur_chrom}:{str(cur_pos)}:{cur_ref}:{cur_alt}",
                         cur_ref,
                         cur_alt,
-                        "50.0",
+                        str(tot_gq / (self.J + 1.0)),
                         "PASS",
                         info_str,
-                        "GT:AD:DP:PL",
+                        "GT:AD:DP:GQ:PL",
                         germline_str,
                     ]
                     + clone_gt_str
@@ -481,16 +485,18 @@ class ClonalSim:
         for i in range(self.n_somatic_mut):
             cur_nalt = 0
             cur_nonmissing = 0
+            tot_gq = 0.0
             cur_dp = []
             cur_pos = int(self.somatic_muts[i])
             germline_alt_reads = self.germline_somatic_alt_reads[i]
             germline_tot_reads = self.germline_somatic_tot_reads[i]
             germline_pl = self.germline_somatic_pl[i, :]
-            germline_str, gt, an, dp = self.create_gt_string(
+            germline_str, gt, an, dp, gq = self.create_gt_string(
                 germline_alt_reads, germline_tot_reads, germline_pl
             )
             cur_nalt += gt
             cur_nonmissing += an
+            tot_gq += gq
             cur_dp.append(dp)
             # Now creating the strings for germline variants in the somatic clones
             clone_gt_str = []
@@ -499,12 +505,13 @@ class ClonalSim:
                 somatic_alt_reads = self.somatic_alt_reads[i, j]
                 somatic_tot_reads = self.somatic_tot_reads[i, j]
                 somatic_pl = self.somatic_mut_pl[i, j, :]
-                somatic_str, gt, an, dp = self.create_gt_string(
+                somatic_str, gt, an, dp, gq = self.create_gt_string(
                     somatic_alt_reads, somatic_tot_reads, somatic_pl
                 )
                 clone_gt_str.append(somatic_str)
                 cur_nalt += gt
                 cur_nonmissing += an
+                tot_gq += gq
                 cur_dp.append(dp)
             # Setting the info string here ...
             info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};ExternalAF={external_af};SM=1"
@@ -517,10 +524,10 @@ class ClonalSim:
                         f"{cur_chrom}:{cur_pos}:{cur_ref}:{cur_alt}",
                         cur_ref,
                         cur_alt,
-                        "50.0",
+                        str(tot_gq / (self.J + 1.0)),
                         "PASS",
                         info_str,
-                        "GT:AD:DP:PL",
+                        "GT:AD:DP:GQ:PL",
                         germline_str,
                     ]
                     + clone_gt_str

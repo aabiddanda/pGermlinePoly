@@ -33,9 +33,8 @@ def test_impute_anno():
 
 def invert_pl(pl):
     """This is a test function to invert the PL field to be a scaled genotype log-likelihood."""
-    p_gt = -10.0 * np.array(pl)
-    p_gt = p_gt - logsumexp(p_gt)
-    # p_gt = np.nan_to_num(p_gt)
+    p_gt = np.array(pl) / -10.0
+    p_gt = np.nan_to_num(p_gt)
     return p_gt
 
 
@@ -69,9 +68,10 @@ def test_complete_logll():
         ],
         dtype="double",
     )
-    Theta = np.array([[1.0, 1.0], [1.0, 1.0]], dtype="double")
+    Theta = np.array([[2.0, 1.0], [1.0, 1.0]], dtype="double")
     prob_germline = ProbGermline(X=X, Theta=Theta)
     prob_germline.impute_anno()
-    logll1 = prob_germline.complete_logll()
-    logll2 = prob_germline.complete_logll(lambdas=np.array([-10, 2], dtype="double"))
-    assert logll1 >= logll2
+    # The second log-likelihood should be a better fit since the first annotation should be more predictive of a true germline het...
+    logll1 = prob_germline.complete_logll(lambdas=np.array([2, 2], dtype="double"))
+    logll2 = prob_germline.complete_logll(lambdas=np.array([-3, -1], dtype="double"))
+    assert logll2 >= logll1
