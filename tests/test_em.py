@@ -109,10 +109,43 @@ def test_em_algo():
         dtype="double",
     )
     Theta = np.array([[2.0, 1.0], [1.0, 1.0]], dtype="double")
-    gammas = np.array([0.5, 0.5], dtype="double")
     prob_germline = ProbGermline(X=X, Theta=Theta)
     prob_germline.impute_anno()
     loglls, lambda_hats = prob_germline.em_algo(delta_logll=1e-4)
     # Basically we want to assure that it is increasing ...
     assert loglls.size > 1
-    assert loglls[1] >= loglls[0]
+    for i in range(1, loglls.size):
+        assert loglls[i] >= loglls[i - 1]
+
+
+def test_em_algo_larger():
+    """Test and look at a larger implementation and test of the EM-algorithm."""
+    X = np.array(
+        [
+            [invert_pl([1, 0, 20]), invert_pl([3, 0, 2])],
+            [invert_pl([1, 0, 4]), invert_pl([0.1, 0, 0.5])],
+            [invert_pl([1, 0, 5]), invert_pl([8, 0, 30])],
+            [invert_pl([1, 0, 4]), invert_pl([4, 0, 3])],
+            [invert_pl([0, 2, 4]), invert_pl([0, 1, 2])],
+        ],
+        dtype="double",
+    )
+    Theta = np.array(
+        [
+            [0.05, 30, 0],
+            [0.25, 20, 0.02],
+            [0.33, np.nan, 0.02],
+            [0.1, 10, 0.0],
+            [np.nan, 0.0, np.nan],
+        ],
+        dtype="double",
+    )
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    loglls, lambda_hats = prob_germline.em_algo(
+        lambdas=np.ones(3, dtype="double"), delta_logll=1e-6
+    )
+    # Basically we want to assure that it is increasing ...
+    assert loglls.size > 1
+    for i in range(1, loglls.size):
+        assert loglls[i] >= loglls[i - 1]

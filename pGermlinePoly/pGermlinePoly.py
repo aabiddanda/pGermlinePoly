@@ -93,9 +93,9 @@ class ProbGermline:
             lambda x: -self.incomplete_logll(gammas_k=gammas_k, lambdas=x),
             x0=np.array([0.0 for _ in range(self.A)], dtype="double"),
             method=algo,
-            bounds=[(-100.0, 100.0) for k in range(self.A)],
+            bounds=[(-20.0, 20.0) for k in range(self.A)],
             tol=1e-4,
-            options={"disp": False, "ftol": 1e-4, "xtol": 1e-4},
+            options={"disp": False, "ftol": 1e-4},
         )
         lambda_hat = opt_res.x
         return lambda_hat
