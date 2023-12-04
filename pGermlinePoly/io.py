@@ -45,7 +45,7 @@ def create_germline_anno(vcf):
     germline_log_ratio = []
     for v in tqdm(vcf):
         if v.is_snp and (len(v.ALT) == 1):
-            x = v.format("PL")
+            x = v.format("PL") / -10.0
             poly_lrr = np.min(x[:, 1:-1], axis=1) - np.min(x[:, [0, -1]])
             germline_log_ratio.append(np.mean(poly_lrr))
         else:
@@ -54,7 +54,7 @@ def create_germline_anno(vcf):
 
 
 def create_anno(vcf, annotations=[]):
-    """Extract annotation values from VCF."""
+    """Extract annotation values from VCF and transpose them."""
     total_anno = []
     for v in tqdm(vcf):
         if v.is_snp and (len(v.ALT) == 1):
@@ -62,7 +62,7 @@ def create_anno(vcf, annotations=[]):
         else:
             anno = [np.nan for a in annotations]
         total_anno.append(anno)
-    return np.hstack(total_anno)
+    return np.vstack(total_anno).T
 
 
 def create_clonal_pl_matrix(vcf):
@@ -75,7 +75,7 @@ def create_clonal_pl_matrix(vcf):
     X = []
     for v in tqdm(vcf):
         if v.is_snp and (len(v.ALT) == 1):
-            x = v.format("PL")
+            x = v.format("PL") / -10.0
             X.append(x)
         else:
             # NOTE: we could replace these with NaNs as well to signify missing data...

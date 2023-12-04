@@ -4,6 +4,7 @@ from cyvcf2 import VCF
 from poly_utils import logsumexp
 
 from pGermlinePoly import ClonalSim, ProbGermline
+from pGermlinePoly.io import create_anno, create_clonal_pl_matrix, create_germline_anno
 
 
 @pytest.mark.parametrize("k,j,a", [(10, 4, 2)])
@@ -149,3 +150,39 @@ def test_em_algo_larger():
     assert loglls.size > 1
     for i in range(1, loglls.size):
         assert loglls[i] >= loglls[i - 1]
+
+
+def test_em_from_vcf(tmp_path):
+    clone_sim = ClonalSim(seq_len=1e6, n_clones=10)
+    clone_sim.simulate_germline()
+    clone_sim.simulate_clone_genealogy(age=80)
+    clone_sim.sim_somatic_mutations(age=80, mut_rate=1e-6)
+    assert clone_sim.n_somatic_mut > 0
+    clone_sim.simulate_germline_somatic_muts()
+    assert np.any(clone_sim.germline_somatic_pl != 0)
+    clone_sim.simulate_clonal_germline_muts()
+    assert np.any(clone_sim.germline_clone_pl != 0)
+    # Setup the output VCF file and write it out
+    d = tmp_path / "em_vcf_test"
+    d.mkdir()
+    vcf_fp = d / "test.vcf"
+    clone_sim.write_vcf(out=vcf_fp)
+    # Reread the vcf file with the appropriate samples & create annotations ...
+    germline_samples = ["Agermline"]
+    clone_samples = [f"Aclone{i}" for i in range(10)]
+    germline_vcf = VCF(vcf_fp, samples=germline_samples, threads=1)
+    germline_anno = create_germline_anno(germline_vcf)
+    clonal_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
+    clone_pl = create_clonal_pl_matrix(clonal_vcf)
+    anno_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
+    anno = create_anno(anno_vcf, annotations=["ExternalAF", "AF"])
+    # Make sure that the dimensions make sense here ...
+    full_anno = np.vstack([germline_anno, anno]).T
+    p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
+    p_germline.impute_anno()
+    loglls_hat, lambdas_hat = p_germline.em_algo(
+        lambdas=np.zeros(p_germline.A, dtype="double")
+    )
+    assert loglls_hat.size > 1
+    for i in range(1, loglls_hat.size):
+        assert loglls_hat[i] >= loglls_hat[i - 1]

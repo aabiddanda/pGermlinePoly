@@ -3,7 +3,7 @@ import logging
 import sys
 
 import click
-from cyvcf2 import VCF
+from cyvcf2 import VCF, Writer
 from tqdm import tqdm
 
 from pGermlinePoly import ProbGermline
@@ -18,7 +18,7 @@ logging.basicConfig(
 
 
 @click.command(
-    help="Inference of probability of annotation-informed germline polymorphism from somatic sequencing data.",
+    help="Inference of annotation-informed probability of germline polymorphism from somatic sequencing data.",
     context_settings=dict(show_default=True),
 )
 @click.option(
@@ -48,8 +48,8 @@ logging.basicConfig(
     "-o",
     required=True,
     type=str,
-    default="out.vcf.gz",
-    help="Output VCF file",
+    default="-",
+    help="Output VCF file (defaults to stdout)",
 )
 def main(vcf, config, nthreads, out):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
@@ -77,7 +77,27 @@ def main(vcf, config, nthreads, out):
     logging.info("Finished extracting data for inference!")
     logging.info("Starting EM-algorithm...")
     p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
-    p_germline.em_algo()
+    p_germline.impute_anno()
+    loglls, lambdas_hat = p_germline.em_algo(
+        lambdas=np.zeros(p_germline.A, dtype="double")
+    )
     logging.info("Finished EM-algorithm!")
-    logging.info(f"Writing VCF output to {out} ...")
-    logging.info(f"Finished writing annotated VCF to {out}!")
+    logging.info("Estimating posterior probability of germline heterozygosity...")
+    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
+    logging.info(f"Writing VCF output to {out} w/ ppGermlinePoly...")
+    out_vcf = VCF(vcf, samples=samples, nthreads=nthreads)
+    out_vcf.add_info_to_header(
+        {
+            "ID": "ppGermlinePoly",
+            "Number": 1,
+            "Type": "Float",
+            "Description": "Posterior probability of germline polymorphism.",
+        }
+    )
+    write_vcf = Writer(fname=out, tmpl=out_vcf)
+    write_vcf.write_header()
+    for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
+        v.INFO["ppGermlinePoly"] = pp_gp
+        write_vcf.write_record(v)
+    write_vcf.close()
+    logging.info(f"Wrote annotated VCF output to {out}!")

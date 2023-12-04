@@ -113,6 +113,7 @@ class ProbGermline:
             # M-step: maximize the parameters
             lambdas_hat = self.opt_lambdas(gammas_k=np.exp(gammas_k))
             loglls.append(self.complete_logll(lambdas=lambdas_hat))
+            print(f"Log-likelihood {loglls[-1]}", "Lambdas:", lambdas_hat)
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
         return np.array(loglls), prev_lambdas
@@ -254,7 +255,7 @@ class ClonalSim:
         for n in self.genealogy.nodes():
             # Get the branch-length and simulate the number of mutations on this branch
             bl = self.genealogy.branch_length(n)
-            e_mut = mut_rate * bl * self.seq_len
+            e_mut = bl * scale_factor * self.seq_len * mut_rate
             n_mut = poisson.rvs(mu=e_mut)
             if n_mut > 0:
                 n_somatic_mut += n_mut

@@ -3,6 +3,7 @@ import logging
 import sys
 
 import click
+import yaml
 from cyvcf2 import VCF
 from tqdm import tqdm
 
@@ -141,6 +142,14 @@ logging.basicConfig(
     default=None,
     help="Output newick file for somatic clone genealogy (unscaled).",
 )
+@click.option(
+    "--out_config",
+    "-oc",
+    required=False,
+    type=str,
+    default=None,
+    help="Output yaml-based config file for applying inference post-hoc.",
+)
 def main(
     seqlen,
     nclones,
@@ -159,6 +168,7 @@ def main(
     seed,
     out,
     out_tree,
+    out_config,
 ):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info(
@@ -214,3 +224,15 @@ def main(
         with open(out_tree, "w+") as tree_out:
             n_str = clone_sim.genealogy.newick(precision=3)
             tree_out.write(n_str)
+    if out_config is not None:
+        logging.info(f"Writing out the config for inference to {out_config}!")
+        data = dict(
+            ind="IndA",
+            age=age,
+            sex="M",
+            germline=["Agermline"],
+            clones=[f"Aclone{i}" for i in range(nclones)],
+            annotations=["ExternalAF", "DP"],
+        )
+        with open(out_config, "w") as outfile:
+            yaml.dump(data, outfile, default_flow_style=False)
