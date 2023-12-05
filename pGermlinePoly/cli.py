@@ -44,6 +44,14 @@ logging.basicConfig(
     help="Number of threads.",
 )
 @click.option(
+    "--algo",
+    "-a",
+    required=False,
+    default="L-BFGS-B",
+    type=click.Choice(["L-BFGS-B", "Powell", "Nelder-Mead"], case_sensitive=True),
+    help="Optimization algorithm for EM-step.",
+)
+@click.option(
     "--out",
     "-o",
     required=True,
@@ -51,7 +59,7 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
-def main(vcf, config, nthreads, out):
+def main(vcf, config, nthreads, algo, out):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
     config = validate_config(config)
@@ -70,10 +78,8 @@ def main(vcf, config, nthreads, out):
     clone_pl = create_clonal_pl_matrix(clonal_vcf)
     anno_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
     anno = create_anno(anno_vcf, annotations=annotations)
-    print(anno.shape, germline_anno.shape)
     # this is a little strange in terms of dimensions here ...
     full_anno = np.vstack([germline_anno, anno]).T
-    print(full_anno.shape)
     logging.info("Finished extracting data for inference!")
     logging.info("Starting EM-algorithm...")
     p_germline = ProbGermline(X=clone_pl, Theta=full_anno)

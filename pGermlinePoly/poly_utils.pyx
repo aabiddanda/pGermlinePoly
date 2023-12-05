@@ -28,14 +28,20 @@ cpdef double logsumexp(double[:] x):
         c += exp(x[i] - m)
     return m + log(c)
 
-cpdef double log_prior(double [:] l, double[:] a):
+cpdef double log_prior(double [:] l, double[:] a, double eps=1e-9):
     """Cython implementation of the logistic function and log-calculation."""
     cdef int i, n;
-    cdef double xk;
+    cdef double xk, prior_p;
     n = l.size
+    xk = 0.0
+    prior_p = 0.0
     for i in range(n):
         xk += l[i]*a[i]
-    return 1.0 / (1.0 + exp(xk))
+    # avoids some
+    prior_p = max(1.0 / (1.0 + exp(xk)), eps)
+    prior_p = min(prior_p, 1.0 - eps)
+    return prior_p
+
 
 cdef double[:] phred_rescale(double[:] raw_gl):
     """Perform phred-based rescaling of the genotype likelihoods."""

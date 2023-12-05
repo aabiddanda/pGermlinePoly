@@ -189,7 +189,7 @@ def main(
         seed=seed,
     )
     logging.info(f"Simulated  {clone_sim.n_germline_poly} germline variants ... ")
-    logging.info(f"Simulating a clonal genealogy for {nclones}...")
+    logging.info(f"Simulating a clonal genealogy for {nclones} clones ...")
     clone_sim.simulate_clone_genealogy(age=age, seed=seed)
     clone_sim.sim_somatic_mutations(
         age=age,
@@ -200,7 +200,7 @@ def main(
         seed=seed,
     )
     logging.info(
-        f"Simulated {clone_sim.n_somatic_mut} somatic mutations for an individual of age {age}!"
+        f"Simulated {clone_sim.n_somatic_mut} somatic mutations for an individual of age {age} with {mean_clone_cov} ({var_clone_cov}) coverage ...!"
     )
     logging.info(f"Filling in germline mutation status for {nclones} clones!")
     clone_sim.simulate_germline_somatic_muts(

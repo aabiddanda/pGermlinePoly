@@ -1,4 +1,6 @@
 """Inference and simulation of germline polymorphism in clonal sequencing data."""
+import logging
+
 import msprime
 import numpy as np
 from poly_utils import complete_loglik, geno_loglik, log_prior, logaddexp, logsumexp
@@ -93,14 +95,20 @@ class ProbGermline:
             lambda x: -self.incomplete_logll(gammas_k=gammas_k, lambdas=x),
             x0=np.array([0.0 for _ in range(self.A)], dtype="double"),
             method=algo,
-            bounds=[(-20.0, 20.0) for k in range(self.A)],
+            bounds=[(-30.0, 30.0) for k in range(self.A)],
             tol=1e-4,
             options={"disp": False, "ftol": 1e-4},
         )
         lambda_hat = opt_res.x
         return lambda_hat
 
-    def em_algo(self, lambdas=np.array([-1, -2], dtype="double"), delta_logll=1e-2):
+    def em_algo(
+        self,
+        lambdas=np.array([-1, -2], dtype="double"),
+        algo="L-BFGS-B",
+        delta_logll=1e-5,
+        log=True,
+    ):
         """EM-algorithm to estimate parameters for prior of germline polymorphism."""
         assert lambdas.size == self.A
         lambdas_prev = lambdas
@@ -111,9 +119,10 @@ class ProbGermline:
             # E-step: estimate the expected probability
             gammas_k = self.post_prob_poly(lambdas=lambdas_prev)
             # M-step: maximize the parameters
-            lambdas_hat = self.opt_lambdas(gammas_k=np.exp(gammas_k))
+            lambdas_hat = self.opt_lambdas(gammas_k=np.exp(gammas_k), algo=algo)
             loglls.append(self.complete_logll(lambdas=lambdas_hat))
-            print(f"Log-likelihood {loglls[-1]}", "Lambdas:", lambdas_hat)
+            if log:
+                logging.info(f"Log-likelihood {loglls[-1]}", "Lambdas:", lambdas_hat)
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
         return np.array(loglls), prev_lambdas
