@@ -122,7 +122,7 @@ class ProbGermline:
             lambdas_hat = self.opt_lambdas(gammas_k=np.exp(gammas_k), algo=algo)
             loglls.append(self.complete_logll(lambdas=lambdas_hat))
             if log:
-                logging.info(f"Log-likelihood {loglls[-1]}", "Lambdas:", lambdas_hat)
+                logging.info(f"Log-likelihood {loglls[-1]}, Lambdas: {lambdas_hat}")
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
         return np.array(loglls), prev_lambdas
