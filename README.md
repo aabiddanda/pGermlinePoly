@@ -53,6 +53,7 @@ The minimal fields have been:
 - `clones`: the list of clone IDs - that should also be in the VCF file.
 - `germline`: the germline sample IDs.
 
+An example configuration is below:
 
 ```
 ind: IndA
@@ -84,7 +85,7 @@ The generated VCF file will not be sorted by position by default (which can mess
 somatic-sim [options] -o /dev/stdout | bcftools sort | bgzip > out.vcf.gz; tabix -f out.vcf.gz
 ```
 
-We encourage `tabix` indexing as a broader statement of
+We encourage `tabix` indexing as a broader statement of the validity of the VCF file and that it will comply with other common tools.
 
 The full suite of options for simulation are:
 
