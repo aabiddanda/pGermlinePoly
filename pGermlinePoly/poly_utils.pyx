@@ -28,17 +28,17 @@ cpdef double logsumexp(double[:] x):
         c += exp(x[i] - m)
     return m + log(c)
 
+# Should we add in an intercept term here?
 cpdef double log_prior(double [:] l, double[:] a, double eps=1e-9):
     """Cython implementation of the logistic function and log-calculation."""
     cdef int i, n;
     cdef double xk, prior_p;
     n = l.size
-    xk = 0.0
     prior_p = 0.0
-    for i in range(n):
+    for i in range(0, n):
         xk += l[i]*a[i]
-    # avoids some
-    prior_p = max(1.0 / (1.0 + exp(xk)), eps)
+    # avoids some potential errors in here with under flow
+    prior_p = max(1.0 / (1.0 + exp(-xk)), eps)
     prior_p = min(prior_p, 1.0 - eps)
     return prior_p
 
@@ -92,12 +92,24 @@ cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
     norm_gl = phred_rescale(raw_gl)
     return norm_gl
 
-cpdef double complete_loglik(int K, double[:] lambdas, double[:,:] Theta, double[:,:,:] X):
+cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X):
     """Cython helper for computing the full-data log-likelihood for pGermlinePoly."""
+    cdef double logll = 0.0;
+    cdef int k,j;
+
+    for k in range(K):
+        pi_k = log_prior(lambdas, Theta[k, :])
+        for j in range(J):
+            # Compute the likelihood as a sum across sites
+            logll += logaddexp(log(pi_k) + logsumexp(X[k, j, 1:-1]), log(1.0 - pi_k) + logaddexp(X[k, j, 0], X[k, j, -1]))
+    return logll
+
+cpdef double incomplete_loglik(int K, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X):
+    """Cython helper function for computing the incomplete log-likelihood."""
     cdef double logll = 0.0;
     cdef int k;
     for k in range(K):
-        pi_k = log_prior(lambdas, Theta[k, :])
-        # Compute the likelihood as a sum across sites
-        logll += logaddexp(log(pi_k) + np.sum(X[k, :, 1:-1]), log(1.0 - pi_k) + np.sum(X[k, :, 0]) + np.sum(X[k, :, -1]))
+        pi_k = log_prior(lambdas, Theta[k,:])
+        logll += exp(gammas_k[k]) * (log(pi_k) + np.sum(X[k, :, 1:-1]))
+        logll += (1.0 - exp(gammas_k[k])) * (log(1.0 - pi_k) + np.sum(X[k, :, 0]) + np.sum(X[k, :, -1]))
     return logll
