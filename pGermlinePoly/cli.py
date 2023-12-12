@@ -93,7 +93,7 @@ def main(vcf, config, nthreads, algo, naive, out):
     p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
     p_germline.impute_anno()
     if naive:
-        lambdas_hat = p_germline.naive_mle(algo=algo, disp=True)
+        lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
     else:
         loglls, lambdas_hat = p_germline.em_algo(
             algo=algo, lambdas=np.zeros(p_germline.A, dtype="double")
@@ -108,7 +108,7 @@ def main(vcf, config, nthreads, algo, naive, out):
             "ID": "ppGermlinePoly",
             "Number": 1,
             "Type": "Float",
-            "Description": "Posterior probability of germline polymorphism.",
+            "Description": "Log posterior probability of germline polymorphism.",
         }
     )
     for a, l in zip(["germline"] + config["annotations"], lambdas_hat):
