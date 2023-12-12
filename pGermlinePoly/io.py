@@ -2,6 +2,7 @@
 import numpy as np
 import yaml
 from cerberus import Validator
+from poly_utils import logsumexp
 from tqdm import tqdm
 
 germline_schema = {
@@ -35,6 +36,20 @@ def check_annotations(vcf, annotations=["PL", "AD"]):
         assert vcf.contains(a)
 
 
+def invert_pl(pl):
+    """Invert the PL field to a normalized genotype log-likelihood."""
+    pl = np.array(pl)
+    assert np.all(pl >= 0)
+    assert pl.ndim == 1
+    assert pl.size > 1
+    p_gt = pl + 1.0
+    p_gt /= -10.0
+    p_gt = np.nan_to_num(p_gt)
+    p_gt /= np.log10(np.e)
+    p_gt = p_gt - logsumexp(p_gt)
+    return p_gt
+
+
 def create_germline_anno(vcf):
     """Create the germline annotation for the clonal sequencing data.
 
@@ -45,12 +60,22 @@ def create_germline_anno(vcf):
     germline_log_ratio = []
     for v in tqdm(vcf):
         if v.is_snp and (len(v.ALT) == 1):
-            x = v.format("PL") / -10.0
-            poly_lrr = np.min(x[:, 1:-1], axis=1) - np.min(x[:, [0, -1]])
-            germline_log_ratio.append(np.mean(poly_lrr))
+            x = v.format("PL")
+            if x.ndim == 1:
+                pl_x = invert_pl(x)
+                poly_lrr = logsumexp(pl_x[1:-1]) - logsumexp(pl_x[[0, -1]])
+                germline_log_ratio.append(poly_lrr)
+            else:
+                poly_lrr = np.zeros(x.shape[0])
+                for i in range(x.shape[0]):
+                    pl_x = invert_pl(x[i])
+                    poly_lrr[i] = logsumexp(pl_x[1:-1]) - logsumexp(pl_x[[0, -1]])
+                germline_log_ratio.append(np.mean(poly_lrr))
         else:
             germline_log_ratio.append(np.nan)
-    return np.array(germline_log_ratio, dtype=np.float32)
+    germline_log_ratio = np.array(germline_log_ratio, dtype=np.float32)
+    assert germline_log_ratio.ndim == 1
+    return germline_log_ratio
 
 
 def create_anno(vcf, annotations=[]):
@@ -75,8 +100,9 @@ def create_clonal_pl_matrix(vcf):
     X = []
     for v in tqdm(vcf):
         if v.is_snp and (len(v.ALT) == 1):
-            x = v.format("PL") / -10.0
-            X.append(x)
+            x = v.format("PL")
+            A = [invert_pl(x[i, :]) for i in range(x.shape[0])]
+            X.append(A)
         else:
             # NOTE: we could replace these with NaNs as well to signify missing data...
             X.append(np.zeros(shape=(len(vcf.samples), 3)))

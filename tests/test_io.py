@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 import yaml
 from cyvcf2 import VCF
@@ -8,6 +9,7 @@ from pGermlinePoly.io import (
     create_anno,
     create_clonal_pl_matrix,
     create_germline_anno,
+    invert_pl,
     validate_config,
 )
 
@@ -84,6 +86,22 @@ clones:
 annotations:
   - MLEAF
 """
+
+
+@pytest.mark.parametrize(
+    "test_pl", [np.array([3, 0, 20]), np.array([0, 20, 40]), np.array([0, 0, 0])]
+)
+def test_invert_pl(test_pl):
+    """Testing the inverted PL functionality."""
+    norm_pl = invert_pl(test_pl)
+    assert np.exp(norm_pl).sum() == 1.0
+
+
+@pytest.mark.parametrize("test_pl", [np.array([-1, 0, 0]), np.array([-1, -2, -4])])
+def test_invert_pl_bad(test_pl):
+    """Testing the inverted PL functionality."""
+    with pytest.raises(AssertionError):
+        invert_pl(test_pl)
 
 
 def test_valid_config_strings(tmp_path):

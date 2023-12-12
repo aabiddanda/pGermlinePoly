@@ -112,6 +112,23 @@ class ProbGermline:
         lambda_hat = opt_res.x
         return lambda_hat
 
+    def naive_mle(self, algo="L-BFGS-B", disp=False):
+        """Naive optimization of the model log-likelihood.
+
+        NOTE: this is not recommended for large models and largely is implemented for testing.
+        """
+        assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
+        opt_res = minimize(
+            lambda x: -self.complete_logll(lambdas=x),
+            x0=np.array([0.0 for _ in range(self.A)], dtype="double"),
+            method=algo,
+            bounds=[(-30.0, 30.0) for _ in range(self.A)],
+            tol=1e-8,
+            options={"disp": disp},
+        )
+        lambda_hat = opt_res.x
+        return lambda_hat
+
     def em_algo(
         self,
         lambdas=np.array([0.0, 0.0], dtype="double"),
@@ -140,23 +157,6 @@ class ProbGermline:
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
         return np.array(loglls), prev_lambdas
-
-    def naive_mle(self, algo="L-BFGS-B"):
-        """Naive optimization of the model log-likelihood.
-
-        NOTE: this is not recommended for large models and largely is implemented for testing.
-        """
-        assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
-        opt_res = minimize(
-            lambda x: -self.complete_logll(lambdas=x),
-            x0=np.array([0.0 for _ in range(self.A)], dtype="double"),
-            method=algo,
-            bounds=[(-30.0, 30.0) for _ in range(self.A)],
-            tol=1e-8,
-            options={"disp": False},
-        )
-        lambda_hat = opt_res.x
-        return lambda_hat
 
 
 class ClonalSim:

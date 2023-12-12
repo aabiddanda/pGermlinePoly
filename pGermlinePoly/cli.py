@@ -49,7 +49,15 @@ logging.basicConfig(
     required=False,
     default="L-BFGS-B",
     type=click.Choice(["L-BFGS-B", "Powell", "Nelder-Mead"], case_sensitive=True),
-    help="Optimization algorithm for EM-step.",
+    help="Optimization algorithm for EM-algorithm or naive optimization.",
+)
+@click.option(
+    "--naive",
+    "-n",
+    required=False,
+    default=True,
+    type=bool,
+    help="Numerical optimization of MLE parameters.",
 )
 @click.option(
     "--out",
@@ -59,7 +67,7 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
-def main(vcf, config, nthreads, algo, out):
+def main(vcf, config, nthreads, algo, naive, out):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
     config = validate_config(config)
@@ -84,9 +92,12 @@ def main(vcf, config, nthreads, algo, out):
     logging.info("Starting EM-algorithm...")
     p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
     p_germline.impute_anno()
-    loglls, lambdas_hat = p_germline.em_algo(
-        lambdas=np.zeros(p_germline.A, dtype="double")
-    )
+    if naive:
+        lambdas_hat = p_germline.naive_mle(algo=algo, disp=True)
+    else:
+        loglls, lambdas_hat = p_germline.em_algo(
+            algo=algo, lambdas=np.zeros(p_germline.A, dtype="double")
+        )
     logging.info("Finished EM-algorithm!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
     pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
@@ -100,6 +111,8 @@ def main(vcf, config, nthreads, algo, out):
             "Description": "Posterior probability of germline polymorphism.",
         }
     )
+    for a, l in zip(["germline"] + config["annotations"], lambdas_hat):
+        out_vcf.add_to_header(f"##lambda_{a}={l}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
     for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
