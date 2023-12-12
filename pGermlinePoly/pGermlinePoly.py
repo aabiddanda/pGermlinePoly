@@ -1,9 +1,17 @@
 """Inference and simulation of germline polymorphism in clonal sequencing data."""
 import logging
+import warnings
 
 import msprime
 import numpy as np
-from poly_utils import complete_loglik, geno_loglik, log_prior, logaddexp, logsumexp
+from poly_utils import (
+    complete_loglik,
+    geno_loglik,
+    incomplete_loglik,
+    log_prior,
+    logaddexp,
+    logsumexp,
+)
 from scipy.optimize import minimize
 from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
 
@@ -77,31 +85,25 @@ class ProbGermline:
         logll = complete_loglik(self.K, self.J, lambdas, self.Theta, self.X)
         return logll
 
-    def incomplete_logll(
-        self, gammas_k, lambdas=np.array([0.0, 0.0, 0.0], dtype="double")
-    ):
+    def incomplete_logll(self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double")):
         """Compute the incomplete-data log-likelihood for optimization.
 
         Note: this assumes that you have the posteriors pre-computed.
 
         """
         assert gammas_k.size == self.K
-        assert lambdas.size == self.A + 1
-        logll = 0.0
-        for k in range(self.K):
-            pi_k = log_prior(lambdas, self.Theta[k])
-            logll += np.exp(gammas_k[k]) * (np.log(pi_k) + np.sum(self.X[k, :, 1:-1]))
-            logll += (1.0 - np.exp(gammas_k[k])) * (
-                np.log(1.0 - pi_k) + np.sum(self.X[k, :, [0, -1]])
-            )
+        assert lambdas.size == self.A
+        logll = incomplete_loglik(self.K, self.J, lambdas, gammas_k, self.Theta, self.X)
         return logll
 
-    def opt_lambdas(self, gammas_k, algo="L-BFGS-B"):
+    def opt_lambdas(
+        self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double"), algo="L-BFGS-B"
+    ):
         """Optimize the lambda parameter weights in the M-step of the EM-algorithm."""
         assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
         opt_res = minimize(
             lambda x: -self.incomplete_logll(gammas_k=gammas_k, lambdas=x),
-            x0=np.array([0.0 for _ in range(self.A)], dtype="double"),
+            x0=lambdas,
             method=algo,
             bounds=[(-30.0, 30.0) for _ in range(self.A)],
             tol=1e-8,
@@ -124,20 +126,26 @@ class ProbGermline:
         loglls.append(self.complete_logll(lambdas=lambdas_prev))
         cur_delta = 1e9
         while cur_delta >= delta_logll:
-            # E-step: estimate the expected probability
+            # E-step: estimate the expected probability using prev params
             gammas_k = self.post_prob_poly(lambdas=lambdas_prev)
             # M-step: maximize the parameters
-            lambdas_hat = self.opt_lambdas(gammas_k=gammas_k, algo=algo)
+            lambdas_hat = self.opt_lambdas(
+                gammas_k=gammas_k, lambdas=lambdas_prev, algo=algo
+            )
             loglls.append(self.complete_logll(lambdas=lambdas_hat))
             if log:
                 logging.info(f"Log-likelihood {loglls[-1]}, Lambdas: {lambdas_hat}")
+            if loglls[-1] >= loglls[-2]:
+                warnings.warn("Incomplete log-likelihood is not increasing!")
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
         return np.array(loglls), prev_lambdas
 
-    # ------ TESTING: DANGER ZONE! ------- #
-    def naive_opt(self, algo="L-BFGS-B"):
-        """Naive optimization of the complete log-likelihood."""
+    def naive_mle(self, algo="L-BFGS-B"):
+        """Naive optimization of the model log-likelihood.
+
+        NOTE: this is not recommended for large models and largely is implemented for testing.
+        """
         assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
         opt_res = minimize(
             lambda x: -self.complete_logll(lambdas=x),
@@ -149,20 +157,6 @@ class ProbGermline:
         )
         lambda_hat = opt_res.x
         return lambda_hat
-
-    def per_site_logll(self, lambdas=np.array([0.0, 0.0], dtype="double")):
-        """Per-site log-likelihood."""
-        loglls = np.zeros(self.K)
-        priors = np.zeros(self.K)
-        for k in range(self.K):
-            pi_k = log_prior(lambdas, self.Theta[k])
-            priors[k] = pi_k
-            for j in range(self.J):
-                loglls[k] += logaddexp(
-                    np.log(pi_k) + np.sum(self.X[k, j, 1:-1]),
-                    np.log(1.0 - pi_k) + np.sum(self.X[k, j, [0, -1]]),
-                )
-        return priors, loglls
 
 
 class ClonalSim:

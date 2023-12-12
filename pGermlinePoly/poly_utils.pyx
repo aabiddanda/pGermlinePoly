@@ -104,12 +104,14 @@ cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta,
             logll += logaddexp(log(pi_k) + logsumexp(X[k, j, 1:-1]), log(1.0 - pi_k) + logaddexp(X[k, j, 0], X[k, j, -1]))
     return logll
 
-cpdef double incomplete_loglik(int K, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X):
+cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X):
     """Cython helper function for computing the incomplete log-likelihood."""
     cdef double logll = 0.0;
-    cdef int k;
+    cdef int k, j;
     for k in range(K):
         pi_k = log_prior(lambdas, Theta[k,:])
-        logll += exp(gammas_k[k]) * (log(pi_k) + np.sum(X[k, :, 1:-1]))
-        logll += (1.0 - exp(gammas_k[k])) * (log(1.0 - pi_k) + np.sum(X[k, :, 0]) + np.sum(X[k, :, -1]))
+        logll_poly = 0.0
+        logll_nonpoly = 0.0
+        for j in range(J):
+            logll += exp(gammas_k[k]) * (log(pi_k) + logsumexp(X[k, j, 1:-1])) + (1.0 - exp(gammas_k[k])) * (log(1.0 - pi_k) + logaddexp(X[k,j,0], X[k,j,-1]))
     return logll
