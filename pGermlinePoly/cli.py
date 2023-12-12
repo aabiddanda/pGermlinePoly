@@ -89,16 +89,21 @@ def main(vcf, config, nthreads, algo, naive, out):
     # this is a little strange in terms of dimensions here ...
     full_anno = np.vstack([germline_anno, anno]).T
     logging.info("Finished extracting data for inference!")
-    logging.info("Starting EM-algorithm...")
+
     p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
+    logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
     if naive:
+        logging.info("Starting Numerical MLE estimation!")
         lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
+        logging.info("Finished Numerical MLE estimation!")
+
     else:
+        logging.info("Starting EM-algorithm...")
         loglls, lambdas_hat = p_germline.em_algo(
             algo=algo, lambdas=np.zeros(p_germline.A, dtype="double")
         )
-    logging.info("Finished EM-algorithm!")
+        logging.info("Finished EM-algorithm!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
     pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
     logging.info(f"Writing VCF output to {out} w/ ppGermlinePoly...")
