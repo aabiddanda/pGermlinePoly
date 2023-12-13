@@ -35,6 +35,10 @@ class ProbGermline:
         assert K == self.K
         self.Theta = Theta
 
+    def __str__(self):
+        """Return a string representation of the object."""
+        return f"pGermlineObj ({self.K} sites; {self.J} clones; {self.A} annotations)"
+
     def impute_anno(self):
         """Impute annotations using the site-wise mean."""
         assert self.Theta is not None
