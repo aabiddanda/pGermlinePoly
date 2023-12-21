@@ -8,7 +8,7 @@ from pGermlinePoly.io import (
     check_samples,
     create_anno,
     create_clonal_pl_matrix,
-    create_germline_anno,
+    create_germline_anno_gl,
     invert_pl,
     validate_config,
 )
@@ -267,7 +267,7 @@ def test_create_germline_anno(tmp_path):
     samples = config["germline"]
     annotations = config["annotations"]
     germline_vcf = VCF(vcf_fp, samples=samples)
-    germ_anno = create_germline_anno(germline_vcf)
+    germ_anno = create_germline_anno_gl(germline_vcf)
     assert germ_anno.size > 0
 
 

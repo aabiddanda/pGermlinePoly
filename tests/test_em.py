@@ -48,6 +48,24 @@ def test_impute_anno():
     assert prob_germline.Theta[5, 1] == 0
 
 
+def test_post_prob_even():
+    """Ideally the posterior of these with a flat prior should be 0.5."""
+    X = np.array(
+        [
+            [invert_pl([0, 0, 0]), invert_pl([0, 0, 0])],
+            [invert_pl([0, 0, 0]), invert_pl([0, 0, 0])],
+        ],
+        dtype="double",
+    )
+    Theta = np.array([[1.0, 1.0], [1.0, 1.0]], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    post_k = prob_germline.post_prob_poly()
+    assert post_k.size == prob_germline.K
+    # Numerically this might not completely work but I think that it does still hold.
+    assert np.all(np.isclose(np.exp(post_k), 0.5))
+
+
 def test_post_prob_poly():
     """Simple simulation with just two points here."""
     X = np.array(

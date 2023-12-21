@@ -1,11 +1,10 @@
+# cython: boundscheck=False
+# cython: cdivision=True
+# cython: wraparound=False
+
 from libc.math cimport erf, exp, log, log10, pi, sqrt
 
 import numpy as np
-
-
-cdef double sqrt2 = sqrt(2.);
-cdef double sqrt2pi = sqrt(2*pi);
-cdef double logsqrt2pi = log(1/sqrt2pi)
 
 
 cpdef double logaddexp(double a, double b):
@@ -32,12 +31,11 @@ cpdef double logsumexp(double[:] x):
 cpdef double log_prior(double [:] l, double[:] a, double eps=1e-9):
     """Cython implementation of the logistic function and log-calculation."""
     cdef int i, n;
-    cdef double xk, prior_p;
+    cdef double xk = 0.0;
+    cdef double prior_p = 0.0;
     n = l.size
-    prior_p = 0.0
     for i in range(0, n):
         xk += l[i]*a[i]
-    # avoids some potential errors in here with under flow
     prior_p = max(1.0 / (1.0 + exp(-xk)), eps)
     prior_p = min(prior_p, 1.0 - eps)
     return prior_p
@@ -47,12 +45,15 @@ cdef double[:] phred_rescale(double[:] raw_gl):
     """Perform phred-based rescaling of the genotype likelihoods."""
     cdef double min_gl;
     cdef int i, n;
+    cdef double[:] norm_gl = raw_gl;
     min_gl = 1e24
     n = raw_gl.size
-    norm_gl = [-log10(exp(x)) for x in raw_gl]
+    for i in range(n):
+        norm_gl[i] = -10*log10(exp(raw_gl[i]))
     for i in range(n):
         min_gl = min(min_gl, norm_gl[i])
-    norm_gl = np.array([x - min_gl for x in norm_gl])
+    for i in range(n):
+        norm_gl[i] = norm_gl[i] - min_gl
     return norm_gl
 
 cdef double geno_gl(int alt_reads, int tot_reads, int a1=0, int a2=0, double q=30.0):
@@ -99,9 +100,13 @@ cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta,
 
     for k in range(K):
         pi_k = log_prior(lambdas, Theta[k, :])
+        log_poly = 0.0
+        log_nonpoly = 0.0
         for j in range(J):
-            # Compute the likelihood as a sum across sites
-            logll += logaddexp(log(pi_k) + logsumexp(X[k, j, 1:-1]), log(1.0 - pi_k) + logaddexp(X[k, j, 0], X[k, j, -1]))
+            # Compute the likelihood as the sum of log-likelihoods across clones ...
+            log_poly += X[k,j,1]
+            log_nonpoly += max(X[k,j,0], X[k,j,-1])
+        logll += logaddexp(log(pi_k) + log_poly, log(1.0 - pi_k) + log_nonpoly)
     return logll
 
 cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X):

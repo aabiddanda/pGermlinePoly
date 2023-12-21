@@ -12,7 +12,7 @@ from poly_utils import (
     logaddexp,
     logsumexp,
 )
-from scipy.optimize import minimize
+from scipy.optimize import minimize, minimize_scalar
 from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
 
 
@@ -67,11 +67,14 @@ class ProbGermline:
             for j in range(self.J):
                 # Compute the posterior as an average across all the clones
                 # NOTE: we assume that X contains the log-likelihood GL values...
-                post_poly_k = np.log(pi_k) + logsumexp(self.X[k, j, 1:-1])
-                post_nonpoly_k = np.log(1.0 - pi_k) + logsumexp(self.X[k, j, [0, -1]])
+                post_poly_k = np.max(self.X[k, j, 1:-1])
+                # Just take the max of the non-polymorphic classes?
+                post_nonpoly_k = np.max(self.X[k, j, [0, -1]])
                 post_poly_num += post_poly_k
-                post_poly_denom += logaddexp(post_poly_k, post_nonpoly_k)
-            post_k[k] = post_poly_num - post_poly_denom
+                post_poly_denom += post_nonpoly_k
+            post_poly_num += np.log(pi_k)
+            post_poly_denom += np.log(1 - pi_k)
+            post_k[k] = post_poly_num - logaddexp(post_poly_num, post_poly_denom)
         return post_k
 
     def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double")):
@@ -161,6 +164,25 @@ class ProbGermline:
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
         return np.array(loglls), prev_lambdas
+
+    # --------- TESTING -------- #
+    def logl_ratio(self):
+        """Naively compute the log-likelihood ratio."""
+        logls = np.zeros(shape=(self.K, 2))
+        mle_pi0 = np.zeros(self.K)
+        for k in range(self.K):
+            # For each clone - we treat it as independent and add onto the log-likelihood ...
+            for j in range(self.J):
+                logls[k, 0] += self.X[k, j, 1]
+            # Just estimate the MLE mixture proportion based on the log-likelihood ...
+            mle_pi_f = lambda x: -logaddexp(
+                np.log(x) + self.X[k, :, 1].sum(),
+                np.log(1 - x) + np.max(self.X[k, :, [0, -1]], axis=1).sum(),
+            )
+            mle_pi = minimize_scalar(mle_pi_f, bounds=(1e-9, 1-1e-9), method='bounded').x
+            logls[k, 1] = -mle_pi_f(mle_pi)
+            mle_pi0[k] = mle_pi
+        return logls, mle_pi0
 
 
 class ClonalSim:

@@ -50,7 +50,7 @@ def invert_pl(pl):
     return p_gt
 
 
-def create_germline_anno(vcf):
+def create_germline_anno_gl(vcf):
     """Create the germline annotation for the clonal sequencing data.
 
     NOTE: currently this method only considers biallelic SNVs in the annotation model.
