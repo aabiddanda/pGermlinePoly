@@ -7,7 +7,7 @@ from pGermlinePoly import ClonalSim, ProbGermline
 from pGermlinePoly.io import (
     create_anno,
     create_clonal_pl_matrix,
-    create_germline_anno,
+    create_germline_anno_gl,
     invert_pl,
 )
 
@@ -109,111 +109,37 @@ def test_naive_mle():
     assert logll2 >= logll1
 
 
-def test_naive_mle_from_vcf(tmp_path):
-    clone_sim = ClonalSim(seq_len=1e6, n_clones=10)
-    clone_sim.simulate_germline()
-    clone_sim.simulate_clone_genealogy(age=80)
-    clone_sim.sim_somatic_mutations(age=80, mut_rate=1e-6)
-    assert clone_sim.n_somatic_mut > 0
-    clone_sim.simulate_germline_somatic_muts()
-    assert np.any(clone_sim.germline_somatic_pl != 0)
-    clone_sim.simulate_clonal_germline_muts()
-    assert np.any(clone_sim.germline_clone_pl != 0)
-    # Setup the output VCF file and write it out
-    d = tmp_path / "em_vcf_test"
-    d.mkdir()
-    vcf_fp = d / "test.vcf"
-    clone_sim.write_vcf(out=vcf_fp)
-    # Reread the vcf file with the appropriate samples & create annotations ...
-    germline_samples = ["Agermline"]
-    clone_samples = [f"Aclone{i}" for i in range(10)]
-    germline_vcf = VCF(vcf_fp, samples=germline_samples, threads=1)
-    germline_anno = create_germline_anno(germline_vcf)
-    clonal_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
-    clone_pl = create_clonal_pl_matrix(clonal_vcf)
-    anno_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
-    anno = create_anno(anno_vcf, annotations=["ExternalAF", "AF"])
-    # Make sure that the dimensions make sense here ...
-    full_anno = np.vstack([germline_anno, anno]).T
-    p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
-    p_germline.impute_anno()
-    mle_lambdas = p_germline.naive_mle()
-    logll1 = p_germline.complete_logll(
-        lambdas=np.array([0.0, 0.0, 0.0], dtype="double")
-    )
-    logll2 = p_germline.complete_logll(lambdas=mle_lambdas)
-    assert logll2 >= logll1
-
-
-# def test_incomplete_logll():
-#     """Test the incomplete log-likelihood for a small test case."""
-#     X = np.array(
-#         [
-#             [invert_pl([1, 0, 20]), invert_pl([3, 0, 2])],
-#             [invert_pl([0, 2, 4]), invert_pl([0, 1, 2])],
-#         ],
-#         dtype="double",
+# def test_naive_mle_from_vcf(tmp_path):
+#     clone_sim = ClonalSim(seq_len=1e6, n_clones=10)
+#     clone_sim.simulate_germline()
+#     clone_sim.simulate_clone_genealogy(age=80)
+#     clone_sim.sim_somatic_mutations(age=80, mut_rate=1e-6)
+#     assert clone_sim.n_somatic_mut > 0
+#     clone_sim.simulate_germline_somatic_muts()
+#     assert np.any(clone_sim.germline_somatic_pl != 0)
+#     clone_sim.simulate_clonal_germline_muts()
+#     assert np.any(clone_sim.germline_clone_pl != 0)
+#     # Setup the output VCF file and write it out
+#     d = tmp_path / "em_vcf_test"
+#     d.mkdir()
+#     vcf_fp = d / "test.vcf"
+#     clone_sim.write_vcf(out=vcf_fp)
+#     # Reread the vcf file with the appropriate samples & create annotations ...
+#     germline_samples = ["Agermline"]
+#     clone_samples = [f"Aclone{i}" for i in range(10)]
+#     germline_vcf = VCF(vcf_fp, samples=germline_samples, threads=1)
+#     germline_anno = create_germline_anno(germline_vcf)
+#     clonal_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
+#     clone_pl = create_clonal_pl_matrix(clonal_vcf)
+#     anno_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
+#     anno = create_anno(anno_vcf, annotations=["ExternalAF", "AF"])
+#     # Make sure that the dimensions make sense here ...
+#     full_anno = np.vstack([germline_anno, anno]).T
+#     p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
+#     p_germline.impute_anno()
+#     mle_lambdas = p_germline.naive_mle()
+#     logll1 = p_germline.complete_logll(
+#         lambdas=np.array([0.0, 0.0, 0.0], dtype="double")
 #     )
-#     Theta = np.array([[2.0, 1.0], [1.0, 1.0]], dtype="double")
-#     gammas = np.array([0.5, 0.5], dtype="double")
-#     prob_germline = ProbGermline(X=X, Theta=Theta)
-#     prob_germline.impute_anno()
-#     logll1 = prob_germline.incomplete_logll(
-#         gammas_k=gammas, lambdas=np.array([2, 2], dtype="double")
-#     )
-#     logll2 = prob_germline.incomplete_logll(
-#         gammas_k=gammas, lambdas=np.array([-3, 0], dtype="double")
-#     )
+#     logll2 = p_germline.complete_logll(lambdas=mle_lambdas)
 #     assert logll2 >= logll1
-
-
-# def test_em_algo():
-#     """Test out the full EM-algorithm."""
-#     X = np.array(
-#         [
-#             [invert_pl([1, 0, 20]), invert_pl([3, 0, 2])],
-#             [invert_pl([0, 2, 4]), invert_pl([0, 1, 2])],
-#         ],
-#         dtype="double",
-#     )
-#     Theta = np.array([[2.0, 1.0], [1.0, 1.0]], dtype="double")
-#     prob_germline = ProbGermline(X=X, Theta=Theta)
-#     prob_germline.impute_anno()
-#     loglls, lambda_hats = prob_germline.em_algo(delta_logll=1e-4)
-#     # Basically we want to assure that it is increasing ...
-#     assert loglls.size > 1
-#     for i in range(1, loglls.size):
-#         assert loglls[i] >= loglls[i - 1]
-
-
-# def test_em_algo_larger():
-#     """Test and look at a larger implementation and test of the EM-algorithm."""
-#     X = np.array(
-#         [
-#             [invert_pl([1, 0, 20]), invert_pl([3, 0, 2])],
-#             [invert_pl([1, 0, 4]), invert_pl([0.1, 0, 0.5])],
-#             [invert_pl([1, 0, 5]), invert_pl([8, 0, 30])],
-#             [invert_pl([1, 0, 4]), invert_pl([4, 0, 3])],
-#             [invert_pl([0, 2, 4]), invert_pl([0, 1, 2])],
-#         ],
-#         dtype="double",
-#     )
-#     Theta = np.array(
-#         [
-#             [0.05, 30, 0],
-#             [0.25, 20, 0.02],
-#             [0.33, np.nan, 0.02],
-#             [0.1, 10, 0.0],
-#             [np.nan, 0.0, np.nan],
-#         ],
-#         dtype="double",
-#     )
-#     prob_germline = ProbGermline(X=X, Theta=Theta)
-#     prob_germline.impute_anno()
-#     loglls, lambda_hats = prob_germline.em_algo(
-#         lambdas=np.ones(3, dtype="double"), delta_logll=1e-6
-#     )
-#     # Basically we want to assure that it is increasing ...
-#     assert loglls.size > 1
-#     for i in range(1, loglls.size):
-#         assert loglls[i] >= loglls[i - 1]

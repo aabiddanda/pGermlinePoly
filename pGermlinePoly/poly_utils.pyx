@@ -94,6 +94,12 @@ cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
     norm_gl = phred_rescale(raw_gl)
     return norm_gl
 
+def d2_fun(f, x, h=1e-5):
+    """Symmetric second derivative function for log-likelihood.
+
+    https://en.wikipedia.org/wiki/Symmetric_derivative#The_second_symmetric_derivative
+    """
+    return (f(x+h) - 2*f(x) + f(x-h)) / (h**2)
 
 cpdef double single_var_logll(int J, double[:,:] X, double p):
     """Likelihood function for a single-variant."""
@@ -108,13 +114,6 @@ cpdef double single_var_logll(int J, double[:,:] X, double p):
         logll += logsumexp(xgl)
     return logll
 
-def d2_fun(f, x, h=1e-5):
-    """Symmetric second derivative function for log-likelihood.
-
-    https://en.wikipedia.org/wiki/Symmetric_derivative#The_second_symmetric_derivative
-    """
-    return (f(x+h) - 2*f(x) + f(x-h)) / (h**2)
-
 def mle_est_loglik(K, J, X):
     """
     Estimate the MLE estimate of the allele frequency.
@@ -126,9 +125,9 @@ def mle_est_loglik(K, J, X):
     logll_p = np.zeros(K)
     for k in range(K):
         # This should be on a log-scale here ...
-        ll = lambda p: -single_var_logll(J,X=X[k,:,:], p=p)
+        ll = lambda p: -single_var_logll(J=J, X=X[k,:,:], p=p)
         mle_p[k] = minimize_scalar(ll, bounds=(0.0, 1.0)).x
-        logll_p = -ll(mle_p[k])
+        logll_p[k] = -ll(mle_p[k])
     return mle_p, logll_p
 
 cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, double[:] logll_p):

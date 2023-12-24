@@ -49,7 +49,9 @@ class ProbGermline:
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
-    def post_prob_poly(self, lambdas=np.array([0.0, 0.0], dtype="double")):
+    def post_prob_poly(
+        self, lambdas=np.array([0.0, 0.0], dtype="double"), logll_p=None
+    ):
         """Posterior probability of being germline polymorphic.
 
         Arguments:
@@ -61,22 +63,18 @@ class ProbGermline:
         """
         assert lambdas.size == self.A
         assert np.all(~np.isnan(lambdas))
+        if logll_p is not None:
+            assert logll_p.size == self.K
+        else:
+            _, logll_p = mle_est_loglik(J=self.J, K=self.K, X=self.X)
         post_k = np.zeros(self.K)
         for k in range(self.K):
             # Estimate the prior based on the weighted annotations
             pi_k = log_prior(lambdas, self.Theta[k, :])
-            post_poly_num = 0.0
-            post_poly_denom = 0.0
-            for j in range(self.J):
-                # Compute the posterior as an average across all the clones
-                # NOTE: we assume that X contains the log-likelihood GL values...
-                post_poly_k = np.max(self.X[k, j, 1:-1])
-                # Just take the max of the non-polymorphic classes?
-                post_nonpoly_k = np.max(self.X[k, j, [0, -1]])
-                post_poly_num += post_poly_k
-                post_poly_denom += post_nonpoly_k
-            post_poly_num += np.log(pi_k)
-            post_poly_denom += np.log(1 - pi_k)
+            post_poly_num = np.log(pi_k) + single_var_logll(
+                J=self.J, X=self.X[k, :, :], p=0.5
+            )
+            post_poly_denom = np.log(1.0 - pi_k) + logll_p[k]
             post_k[k] = post_poly_num - logaddexp(post_poly_num, post_poly_denom)
         return post_k
 
