@@ -6,11 +6,14 @@ import msprime
 import numpy as np
 from poly_utils import (
     complete_loglik,
+    d2_fun,
     geno_loglik,
     incomplete_loglik,
     log_prior,
     logaddexp,
     logsumexp,
+    mle_est_loglik,
+    single_var_logll,
 )
 from scipy.optimize import minimize, minimize_scalar
 from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
@@ -76,6 +79,21 @@ class ProbGermline:
             post_poly_denom += np.log(1 - pi_k)
             post_k[k] = post_poly_num - logaddexp(post_poly_num, post_poly_denom)
         return post_k
+
+    def est_vaf_CI(self):
+        """Estimate the variant allele frequency from likelihoods across all the clonal data.
+
+        Uses the fisher information to account for heterogeneous sequencing depth.
+        """
+        mle_p, logll_p = mle_est_loglik(K=self.K, J=self.J, X=self.X)
+        ci_mle_p = np.zeros(shape=(self.K, 3))
+        for k in range(self.K):
+            ll = lambda p: single_var_logll(J=self.J, X=self.X[k, :, :], p=p)
+            fisher_I = d2_fun(ll, mle_p)
+            ci_mle_p[k, 0] = mle_p[k] - 1.96 / np.sqrt(self.J * fisher_I)
+            ci_mle_p[k, 1] = mle_p[k]
+            ci_mle_p[k, 2] = mle_p[k] + 1.96 / np.sqrt(self.J * fisher_I)
+        return mle_p, logll_p, ci_mle_p
 
     def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double")):
         """Compute the complete data log-likelihood.
@@ -179,7 +197,9 @@ class ProbGermline:
                 np.log(x) + self.X[k, :, 1].sum(),
                 np.log(1 - x) + np.max(self.X[k, :, [0, -1]], axis=1).sum(),
             )
-            mle_pi = minimize_scalar(mle_pi_f, bounds=(1e-9, 1-1e-9), method='bounded').x
+            mle_pi = minimize_scalar(
+                mle_pi_f, bounds=(1e-9, 1 - 1e-9), method="bounded"
+            ).x
             logls[k, 1] = -mle_pi_f(mle_pi)
             mle_pi0[k] = mle_pi
         return logls, mle_pi0

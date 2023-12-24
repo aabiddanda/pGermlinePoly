@@ -42,8 +42,7 @@ def invert_pl(pl):
     assert np.all(pl >= 0)
     assert pl.ndim == 1
     assert pl.size > 1
-    p_gt = pl + 1.0
-    p_gt /= -10.0
+    p_gt = pl / -10.0
     p_gt = np.nan_to_num(p_gt)
     p_gt /= np.log10(np.e)
     p_gt = p_gt - logsumexp(p_gt)
