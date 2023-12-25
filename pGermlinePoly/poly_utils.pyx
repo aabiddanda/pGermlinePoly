@@ -126,6 +126,7 @@ def mle_est_loglik(K, J, X):
     for k in range(K):
         # This should be on a log-scale here ...
         ll = lambda p: -single_var_logll(J=J, X=X[k,:,:], p=p)
+        # NOTE: could we just use the naive MLE estimator here?
         mle_p[k] = minimize_scalar(ll, bounds=(0.0, 1.0)).x
         logll_p[k] = -ll(mle_p[k])
     return mle_p, logll_p

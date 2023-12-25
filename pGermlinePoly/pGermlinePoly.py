@@ -49,6 +49,11 @@ class ProbGermline:
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
+    def mle_est_loglik(self):
+        """Run the MLE estimation routine."""
+        mle_p, logll_p = mle_est_loglik(J=self.J, K=self.K, X=self.X)
+        return mle_p, logll_p
+
     def post_prob_poly(
         self, lambdas=np.array([0.0, 0.0], dtype="double"), logll_p=None
     ):
@@ -93,7 +98,9 @@ class ProbGermline:
             ci_mle_p[k, 2] = mle_p[k] + 1.96 / np.sqrt(self.J * fisher_I)
         return mle_p, logll_p, ci_mle_p
 
-    def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double")):
+    def complete_logll(
+        self, lambdas=np.array([0.0, 0.0], dtype="double"), logll_p=None
+    ):
         """Compute the complete data log-likelihood.
 
         Arguments:
@@ -105,7 +112,9 @@ class ProbGermline:
         """
         assert lambdas.size == self.A
         # run the complete log-likelihood helper function ...
-        logll = complete_loglik(self.K, self.J, lambdas, self.Theta, self.X)
+        if logll_p is None:
+            _, logll_p = self.mle_est_loglik()
+        logll = complete_loglik(self.K, self.J, lambdas, self.Theta, self.X, logll_p)
         return logll
 
     def incomplete_logll(self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double")):
@@ -135,14 +144,17 @@ class ProbGermline:
         lambda_hat = opt_res.x
         return lambda_hat
 
-    def naive_mle(self, algo="L-BFGS-B", disp=False):
+    def naive_mle(self, algo="L-BFGS-B", disp=False, logll_p=None):
         """Naive optimization of the model log-likelihood.
 
         NOTE: this is not recommended for large models and largely is implemented for testing.
         """
         assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
+        if logll_p is None:
+            _, logll_p = self.mle_est_loglik()
+        assert logll_p.size == self.K
         opt_res = minimize(
-            lambda x: -self.complete_logll(lambdas=x),
+            lambda x: -self.complete_logll(lambdas=x, logll_p=logll_p),
             x0=np.array([0.0 for _ in range(self.A)], dtype="double"),
             method=algo,
             bounds=[(-30.0, 30.0) for _ in range(self.A)],

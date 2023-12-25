@@ -80,7 +80,7 @@ def test_post_prob_poly():
     prob_germline.impute_anno()
     post_k = prob_germline.post_prob_poly()
     assert post_k.size == prob_germline.K
-    # These should all be values less than 1.0
+    # These should all be values less than 0.0 in log-space
     assert np.all(post_k <= 0)
     # The first value should be more likely to be a germline variant ...
     assert post_k[0] > post_k[1]
@@ -91,20 +91,26 @@ def test_complete_logll():
     """Test the implementation of the complete log-likelihood for a very small test-case."""
     prob_germline = ProbGermline(X=X, Theta=Theta)
     prob_germline.impute_anno()
+    _, logll_p = prob_germline.mle_est_loglik()
     # The second log-likelihood should be a better fit since the first annotation should be more predictive of a true germline het...
-    logll1 = prob_germline.complete_logll(lambdas=np.array([2, 2], dtype="double"))
-    logll2 = prob_germline.complete_logll(lambdas=np.array([3, -1], dtype="double"))
+    logll1 = prob_germline.complete_logll(
+        lambdas=np.array([2, 2], dtype="double"), logll_p=logll_p
+    )
+    logll2 = prob_germline.complete_logll(
+        lambdas=np.array([3, -1], dtype="double"), logll_p=logll_p
+    )
     assert logll2 >= logll1
+    assert logll2 < 0
+    assert logll1 < 0
 
 
 def test_naive_mle():
     """Test the implementation of the complete log-likelihood for a very small test-case."""
     prob_germline = ProbGermline(X=X, Theta=Theta)
     prob_germline.impute_anno()
-    mle_lambdas = prob_germline.naive_mle()
-    assert mle_lambdas[0] >= 0
-    assert mle_lambdas[1] <= 0
-    logll1 = prob_germline.complete_logll(lambdas=np.array([2, 2], dtype="double"))
+    _, logll_p = prob_germline.mle_est_loglik()
+    mle_lambdas = prob_germline.naive_mle(logll_p=logll_p)
+    logll1 = prob_germline.complete_logll(lambdas=np.array([1.0, 1.0], dtype="double"))
     logll2 = prob_germline.complete_logll(lambdas=mle_lambdas)
     assert logll2 >= logll1
 
