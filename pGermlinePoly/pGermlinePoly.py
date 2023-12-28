@@ -54,6 +54,15 @@ class ProbGermline:
         mle_p, logll_p = mle_est_loglik(J=self.J, K=self.K, X=self.X)
         return mle_p, logll_p
 
+    def prior_poly(self, lambdas=np.array([0.0, 0.0], dtype="double")):
+        """Prior probability of a germline polymorphism."""
+        assert lambdas.size == self.A
+        assert lambdas.ndim == 1
+        pi_k = np.zeros(self.K)
+        for k in range(self.K):
+            pi_k[k] = log_prior(lambdas, self.Theta[k, :])
+        return pi_k
+
     def post_prob_poly(
         self, lambdas=np.array([0.0, 0.0], dtype="double"), logll_p=None
     ):
@@ -105,7 +114,7 @@ class ProbGermline:
         logll_null = np.zeros(self.K)
         for k in range(self.K):
             logll_null[k] = single_var_logll(J=self.J, X=self.X[k, :, :], p=0.5)
-        ll_ratio = -2 * (logll_null - logll_p)
+        ll_ratio = -2.0 * (logll_null - logll_p)
         return ll_ratio
 
     def complete_logll(

@@ -57,12 +57,11 @@ def test_post_prob_even():
         ],
         dtype="double",
     )
-    Theta = np.array([[1.0, 1.0], [1.0, 1.0]], dtype="double")
+    Theta = np.array([[0.0, 1.0], [1.0, 0.0]], dtype="double")
     prob_germline = ProbGermline(X=X, Theta=Theta)
     prob_germline.impute_anno()
     post_k = prob_germline.post_prob_poly()
     assert post_k.size == prob_germline.K
-    # Numerically this might not completely work but I think that it does still hold.
     assert np.all(np.isclose(np.exp(post_k), 0.5))
 
 
@@ -113,6 +112,40 @@ def test_naive_mle():
     logll1 = prob_germline.complete_logll(lambdas=np.array([1.0, 1.0], dtype="double"))
     logll2 = prob_germline.complete_logll(lambdas=mle_lambdas)
     assert logll2 >= logll1
+
+
+def test_loglik_ratio():
+    """Testing for sign of lambda estimate."""
+    X = np.array(
+        [
+            [
+                invert_pl([10, 0, 5]),
+                invert_pl([4, 0, 5]),
+                invert_pl([10, 0, 20]),
+                invert_pl([5, 0, 20]),
+            ],
+            [
+                invert_pl([0, 5, 10]),
+                invert_pl([10, 0, 20]),
+                invert_pl([0, 5, 20]),
+                invert_pl([0, 2, 4]),
+            ],
+            [
+                invert_pl([3, 0, 7]),
+                invert_pl([3, 0, 7]),
+                invert_pl([4, 0, 12]),
+                invert_pl([3, 0, 4]),
+            ],
+        ],
+        dtype="double",
+    )
+    Theta = np.array([[5.0, 0.05], [0.0, 0.05], [5.0, 0.1]], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    ll_ratio = prob_germline.loglik_ratio()
+    # The true somatic mutation below should be the main case here ...
+    assert ll_ratio[1] > ll_ratio[0]
+    assert ll_ratio[1] > ll_ratio[2]
 
 
 # def test_naive_mle_from_vcf(tmp_path):

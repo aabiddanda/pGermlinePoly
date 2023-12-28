@@ -29,7 +29,7 @@ cpdef double logsumexp(double[:] x):
     return m + log(c)
 
 # Should we add in an intercept term here?
-cpdef double log_prior(double [:] l, double[:] a, double eps=1e-9):
+cpdef double log_prior(double [:] l, double[:] a):
     """Cython implementation of the logistic function and log-calculation."""
     cdef int i, n;
     cdef double xk = 0.0;
@@ -37,8 +37,7 @@ cpdef double log_prior(double [:] l, double[:] a, double eps=1e-9):
     n = l.size
     for i in range(0, n):
         xk += l[i]*a[i]
-    prior_p = max(1.0 / (1.0 + exp(-xk)), eps)
-    prior_p = min(prior_p, 1.0 - eps)
+    prior_p = 1.0 / (1.0 + exp(-xk))
     return prior_p
 
 
@@ -108,9 +107,9 @@ cpdef double single_var_logll(int J, double[:,:] X, double p):
     cdef double[:] xgl = np.array([0.0, 0.0, 0.0])
     for j in range(J):
         # Set all of the underlying variables here ...
-        xgl[0] = 2*log(p) + X[j,0]
+        xgl[0] = 2*log(1.0-p) + X[j,0]
         xgl[1] = log(2*p*(1-p)) + X[j,1]
-        xgl[2] = 2*np.log(1-p) + X[j,2]
+        xgl[2] = 2*log(p) + X[j,2]
         logll += logsumexp(xgl)
     return logll
 
