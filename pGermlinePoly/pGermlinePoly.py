@@ -98,6 +98,16 @@ class ProbGermline:
             ci_mle_p[k, 2] = mle_p[k] + 1.96 / np.sqrt(self.J * fisher_I)
         return mle_p, logll_p, ci_mle_p
 
+    def loglik_ratio(self, logll_p=None):
+        """Estimating the naive loglikelihood ratio."""
+        if logll_p is None:
+            _, logll_p = self.mle_est_loglik()
+        logll_null = np.zeros(self.K)
+        for k in range(self.K):
+            logll_null[k] = single_var_logll(J=self.J, X=self.X[k, :, :], p=0.5)
+        ll_ratio = -2 * (logll_null - logll_p)
+        return ll_ratio
+
     def complete_logll(
         self, lambdas=np.array([0.0, 0.0], dtype="double"), logll_p=None
     ):
@@ -192,27 +202,6 @@ class ProbGermline:
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             prev_lambdas = lambdas_hat
         return np.array(loglls), prev_lambdas
-
-    # --------- TESTING -------- #
-    def logl_ratio(self):
-        """Naively compute the log-likelihood ratio."""
-        logls = np.zeros(shape=(self.K, 2))
-        mle_pi0 = np.zeros(self.K)
-        for k in range(self.K):
-            # For each clone - we treat it as independent and add onto the log-likelihood ...
-            for j in range(self.J):
-                logls[k, 0] += self.X[k, j, 1]
-            # Just estimate the MLE mixture proportion based on the log-likelihood ...
-            mle_pi_f = lambda x: -logaddexp(
-                np.log(x) + self.X[k, :, 1].sum(),
-                np.log(1 - x) + np.max(self.X[k, :, [0, -1]], axis=1).sum(),
-            )
-            mle_pi = minimize_scalar(
-                mle_pi_f, bounds=(1e-9, 1 - 1e-9), method="bounded"
-            ).x
-            logls[k, 1] = -mle_pi_f(mle_pi)
-            mle_pi0[k] = mle_pi
-        return logls, mle_pi0
 
 
 class ClonalSim:
