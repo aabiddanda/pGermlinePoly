@@ -1,11 +1,11 @@
-from libc.math cimport erf, exp, log, log10, pi, sqrt
+# cython: boundscheck=False
+# cython: cdivision=True
+# cython: wraparound=False
+
+from libc.math cimport erf, exp, log, log1p, log10, pi, sqrt
 
 import numpy as np
-
-
-cdef double sqrt2 = sqrt(2.);
-cdef double sqrt2pi = sqrt(2*pi);
-cdef double logsqrt2pi = log(1/sqrt2pi)
+from scipy.optimize import minimize_scalar
 
 
 cpdef double logaddexp(double a, double b):
@@ -28,17 +28,16 @@ cpdef double logsumexp(double[:] x):
         c += exp(x[i] - m)
     return m + log(c)
 
+# Should we add in an intercept term here?
 cpdef double log_prior(double [:] l, double[:] a, double eps=1e-9):
     """Cython implementation of the logistic function and log-calculation."""
     cdef int i, n;
-    cdef double xk, prior_p;
+    cdef double xk = 0.0;
+    cdef double prior_p = 0.0;
     n = l.size
-    xk = 0.0
-    prior_p = 0.0
-    for i in range(n):
+    for i in range(0, n):
         xk += l[i]*a[i]
-    # avoids some
-    prior_p = max(1.0 / (1.0 + exp(xk)), eps)
+    prior_p = max(1.0 / (1.0 + exp(-xk)), eps)
     prior_p = min(prior_p, 1.0 - eps)
     return prior_p
 
@@ -47,12 +46,15 @@ cdef double[:] phred_rescale(double[:] raw_gl):
     """Perform phred-based rescaling of the genotype likelihoods."""
     cdef double min_gl;
     cdef int i, n;
+    cdef double[:] norm_gl = raw_gl;
     min_gl = 1e24
     n = raw_gl.size
-    norm_gl = [-log10(exp(x)) for x in raw_gl]
+    for i in range(n):
+        norm_gl[i] = -10*log10(exp(raw_gl[i]))
     for i in range(n):
         min_gl = min(min_gl, norm_gl[i])
-    norm_gl = np.array([x - min_gl for x in norm_gl])
+    for i in range(n):
+        norm_gl[i] = norm_gl[i] - min_gl
     return norm_gl
 
 cdef double geno_gl(int alt_reads, int tot_reads, int a1=0, int a2=0, double q=30.0):
@@ -92,12 +94,62 @@ cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
     norm_gl = phred_rescale(raw_gl)
     return norm_gl
 
-cpdef double complete_loglik(int K, double[:] lambdas, double[:,:] Theta, double[:,:,:] X):
+def d2_fun(f, x, h=1e-5):
+    """Symmetric second derivative function for log-likelihood.
+
+    https://en.wikipedia.org/wiki/Symmetric_derivative#The_second_symmetric_derivative
+    """
+    return (f(x+h) - 2*f(x) + f(x-h)) / (h**2)
+
+cpdef double single_var_logll(int J, double[:,:] X, double p):
+    """Likelihood function for a single-variant."""
+    cdef double logll = 0.0;
+    cdef int j;
+    cdef double[:] xgl = np.array([0.0, 0.0, 0.0])
+    for j in range(J):
+        # Set all of the underlying variables here ...
+        xgl[0] = 2*log(p) + X[j,0]
+        xgl[1] = log(2*p*(1-p)) + X[j,1]
+        xgl[2] = 2*np.log(1-p) + X[j,2]
+        logll += logsumexp(xgl)
+    return logll
+
+def mle_est_loglik(K, J, X):
+    """
+    Estimate the MLE estimate of the allele frequency.
+
+    Store the log-likelihoods under the main allele frequency estimates.
+    NOTE: you really only have to do this once and store the outcomes ...
+    """
+    mle_p = np.zeros(K)
+    logll_p = np.zeros(K)
+    for k in range(K):
+        # This should be on a log-scale here ...
+        ll = lambda p: -single_var_logll(J=J, X=X[k,:,:], p=p)
+        # NOTE: could we just use the naive MLE estimator here?
+        mle_p[k] = minimize_scalar(ll, bounds=(0.0, 1.0)).x
+        logll_p[k] = -ll(mle_p[k])
+    return mle_p, logll_p
+
+cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, double[:] logll_p):
     """Cython helper for computing the full-data log-likelihood for pGermlinePoly."""
     cdef double logll = 0.0;
-    cdef int k;
+    cdef int k,j;
     for k in range(K):
         pi_k = log_prior(lambdas, Theta[k, :])
-        # Compute the likelihood as a sum across sites
-        logll += logaddexp(log(pi_k) + np.sum(X[k, :, 1:-1]), log(1.0 - pi_k) + np.sum(X[k, :, 0]) + np.sum(X[k, :, -1]))
+        log_nonpoly = logll_p[k]
+        log_poly = single_var_logll(J, X=X[k,:,:], p=0.5)
+        logll += logaddexp(log(pi_k) + log_poly, log(1.0 - pi_k) + log_nonpoly)
+    return logll
+
+
+cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X, double[:] logll_p):
+    """Cython helper function for computing the incomplete log-likelihood."""
+    cdef double logll = 0.0;
+    cdef int k, j;
+    for k in range(K):
+        pi_k = log_prior(lambdas, Theta[k,:])
+        log_nonpoly = logll_p[k]
+        log_poly = single_var_logll(J, X=X[k,:,:], p=0.5)
+        logll += exp(gammas_k[k]) * (log(pi_k) + log_poly) + (1.0 - exp(gammas_k[k])) * (log(1.0 - pi_k) + log_nonpoly)
     return logll

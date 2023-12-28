@@ -49,7 +49,15 @@ logging.basicConfig(
     required=False,
     default="L-BFGS-B",
     type=click.Choice(["L-BFGS-B", "Powell", "Nelder-Mead"], case_sensitive=True),
-    help="Optimization algorithm for EM-step.",
+    help="Optimization algorithm for EM-algorithm or naive optimization.",
+)
+@click.option(
+    "--naive",
+    "-n",
+    required=False,
+    default=True,
+    type=bool,
+    help="Numerical optimization of MLE parameters.",
 )
 @click.option(
     "--out",
@@ -59,7 +67,7 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
-def main(vcf, config, nthreads, algo, out):
+def main(vcf, config, nthreads, algo, naive, out):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
     config = validate_config(config)
@@ -81,13 +89,21 @@ def main(vcf, config, nthreads, algo, out):
     # this is a little strange in terms of dimensions here ...
     full_anno = np.vstack([germline_anno, anno]).T
     logging.info("Finished extracting data for inference!")
-    logging.info("Starting EM-algorithm...")
+
     p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
+    logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
-    loglls, lambdas_hat = p_germline.em_algo(
-        lambdas=np.zeros(p_germline.A, dtype="double")
-    )
-    logging.info("Finished EM-algorithm!")
+    if naive:
+        logging.info("Starting Numerical MLE estimation!")
+        lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
+        logging.info("Finished Numerical MLE estimation!")
+
+    else:
+        logging.info("Starting EM-algorithm...")
+        loglls, lambdas_hat = p_germline.em_algo(
+            algo=algo, lambdas=np.zeros(p_germline.A, dtype="double")
+        )
+        logging.info("Finished EM-algorithm!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
     pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
     logging.info(f"Writing VCF output to {out} w/ ppGermlinePoly...")
@@ -97,9 +113,11 @@ def main(vcf, config, nthreads, algo, out):
             "ID": "ppGermlinePoly",
             "Number": 1,
             "Type": "Float",
-            "Description": "Posterior probability of germline polymorphism.",
+            "Description": "Log posterior probability of germline polymorphism.",
         }
     )
+    for a, l in zip(["germline"] + config["annotations"], lambdas_hat):
+        out_vcf.add_to_header(f"##lambda_{a}={l}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
     for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
