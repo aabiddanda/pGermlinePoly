@@ -28,7 +28,6 @@ cpdef double logsumexp(double[:] x):
         c += exp(x[i] - m)
     return m + log(c)
 
-# Should we add in an intercept term here?
 cpdef double log_prior(double [:] l, double[:] a):
     """Cython implementation of the logistic function and log-calculation."""
     cdef int i, n;
@@ -40,6 +39,9 @@ cpdef double log_prior(double [:] l, double[:] a):
     prior_p = 1.0 / (1.0 + exp(-xk))
     return prior_p
 
+cdef double beta_logpdf(double x, double a=1.0, double b=1.0):
+    """The unscaled log PDF of a specific beta distribution."""
+    return (a - 1.0)*log(x) + (b-1.)*log(1.-x)
 
 cdef double[:] phred_rescale(double[:] raw_gl):
     """Perform phred-based rescaling of the genotype likelihoods."""
@@ -140,6 +142,23 @@ cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta,
         log_poly = single_var_logll(J, X=X[k,:,:], p=0.5)
         logll += logaddexp(log(pi_k) + log_poly, log(1.0 - pi_k) + log_nonpoly)
     return logll
+
+
+cpdef double complete_loglik2(int K, int J,  double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
+    cdef double logll = 0.0
+    cdef double pi0_k;
+    cdef int k,j, p;
+    cdef double[:] x0;
+    cdef double[:] x1;
+    cdef double[:] ps = np.linspace(0, 1, npts)
+    for k in range(K):
+        for p in range(npts):
+            x0[p] = beta_logpdf(ps[p], a=a0, b=a0) + single_var_logll(J,X=X[k,:,:], p=ps[p])
+            x1[p] = beta_logpdf(ps[p]) + single_var_logll(J,X=X[k,:,:], p=ps[p])
+        pi0_k = log_prior(lambdas, Theta[k,:])
+        logll += logaddexp(log(pi0_k) + logsumexp(x0), log(1.0 - pi0_k) + logsumexp(x1))
+    return logll
+
 
 
 cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X, double[:] logll_p):
