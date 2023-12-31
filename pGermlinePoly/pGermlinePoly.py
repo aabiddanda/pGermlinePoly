@@ -101,7 +101,7 @@ class ProbGermline:
         ci_mle_p = np.zeros(shape=(self.K, 3))
         for k in range(self.K):
             ll = lambda p: single_var_logll(J=self.J, X=self.X[k, :, :], p=p)
-            fisher_I = d2_fun(ll, mle_p)
+            fisher_I = d2_fun(ll, mle_p[k])
             ci_mle_p[k, 0] = mle_p[k] - 1.96 / np.sqrt(self.J * fisher_I)
             ci_mle_p[k, 1] = mle_p[k]
             ci_mle_p[k, 2] = mle_p[k] + 1.96 / np.sqrt(self.J * fisher_I)

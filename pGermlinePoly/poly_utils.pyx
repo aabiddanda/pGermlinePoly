@@ -100,7 +100,7 @@ def d2_fun(f, x, h=1e-5):
 
     https://en.wikipedia.org/wiki/Symmetric_derivative#The_second_symmetric_derivative
     """
-    return (f(x+h) - 2*f(x) + f(x-h)) / (h**2)
+    return (f(x + h) - 2*f(x) + f(x - h)) / (h**2)
 
 cpdef double single_var_logll(int J, double[:,:] X, double p):
     """Likelihood function for a single-variant."""

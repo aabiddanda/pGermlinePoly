@@ -56,6 +56,7 @@ logging.basicConfig(
     "-n",
     required=False,
     default=True,
+    is_flag=True,
     type=bool,
     help="Numerical optimization of MLE parameters.",
 )
@@ -63,6 +64,7 @@ logging.basicConfig(
     "--lrt",
     required=False,
     default=False,
+    is_flag=True,
     type=bool,
     help="Frequentist likelihood ratio test testing deviation from germline heterozygote.",
 )
@@ -70,6 +72,7 @@ logging.basicConfig(
     "--vaf",
     required=False,
     default=False,
+    is_flag=True,
     type=bool,
     help="Estimate the variant allele frequency.",
 )
@@ -95,7 +98,7 @@ def main(vcf, config, nthreads, algo, naive, lrt, vaf, out):
     logging.info(f"Finished VCF checks on {vcf}!")
     logging.info("Extracting data for inference...")
     germline_vcf = VCF(vcf, samples=config["germline"], threads=nthreads)
-    germline_anno = create_germline_anno(germline_vcf)
+    germline_anno = create_germline_anno_gl(germline_vcf)
     clonal_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
     clone_pl = create_clonal_pl_matrix(clonal_vcf)
     anno_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
@@ -121,8 +124,10 @@ def main(vcf, config, nthreads, algo, naive, lrt, vaf, out):
     logging.info("Estimating posterior probability of germline heterozygosity...")
     pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
     if lrt or vaf:
+        logging.info("Starting estimation of VAF and likelihood ratio ...")
         mle_p, logll_p, ci_mle_p = p_germline.est_vaf_CI()
         loglik_ratio = p_germline.loglik_ratio(logll_p=logll_p)
+        logging.info("Finished estimation of VAF and likelihood ratio!")
     logging.info(f"Writing VCF output to {out} w/ ppGermlinePoly...")
     out_vcf = VCF(vcf, samples=samples, threads=nthreads)
     out_vcf.add_info_to_header(
@@ -137,8 +142,8 @@ def main(vcf, config, nthreads, algo, naive, lrt, vaf, out):
         out_vcf.add_info_to_header(
             {
                 "ID": "mleVAF",
-                "Number": 3,
-                "Type": "Float",
+                "Number": 1,
+                "Type": "String",
                 "Description": "MLE estimate of variant allele frequency and 95% CI.",
             }
         )
@@ -161,13 +166,12 @@ def main(vcf, config, nthreads, algo, naive, lrt, vaf, out):
                 loglik_ratio,
                 mle_p,
                 ci_mle_p[:, 0],
-                ci_mle_p[:, 1],
+                ci_mle_p[:, 2],
                 out_vcf,
             )
         ):
             v.INFO["ppGermlinePoly"] = pp_gp
-            # We should get the CI estimates too ...
-            v.INFO["mleVAF"] = vaf
+            v.INFO["mleVAF"] = f"{max(vaf_low, 0.0)}:{vaf}:{min(vaf_high, 1.0)}"
             v.INFO["lrtGermlinePoly"] = lrt
             write_vcf.write_record(v)
     else:
