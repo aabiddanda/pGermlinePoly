@@ -60,6 +60,20 @@ logging.basicConfig(
     help="Numerical optimization of MLE parameters.",
 )
 @click.option(
+    "--lrt",
+    required=False,
+    default=False,
+    type=bool,
+    help="Frequentist likelihood ratio test testing deviation from germline heterozygote.",
+)
+@click.option(
+    "--vaf",
+    required=False,
+    default=False,
+    type=bool,
+    help="Estimate the variant allele frequency.",
+)
+@click.option(
     "--out",
     "-o",
     required=True,
@@ -67,7 +81,7 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
-def main(vcf, config, nthreads, algo, naive, out):
+def main(vcf, config, nthreads, algo, naive, lrt, vaf, out):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
     config = validate_config(config)
@@ -106,6 +120,9 @@ def main(vcf, config, nthreads, algo, naive, out):
         logging.info("Finished EM-algorithm!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
     pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
+    if lrt or vaf:
+        mle_p, logll_p, ci_mle_p = p_germline.est_vaf_CI()
+        loglik_ratio = p_germline.loglik_ratio(logll_p=logll_p)
     logging.info(f"Writing VCF output to {out} w/ ppGermlinePoly...")
     out_vcf = VCF(vcf, samples=samples, threads=nthreads)
     out_vcf.add_info_to_header(
@@ -116,12 +133,46 @@ def main(vcf, config, nthreads, algo, naive, out):
             "Description": "Log posterior probability of germline polymorphism.",
         }
     )
+    if lrt or vaf:
+        out_vcf.add_info_to_header(
+            {
+                "ID": "mleVAF",
+                "Number": 3,
+                "Type": "Float",
+                "Description": "MLE estimate of variant allele frequency and 95% CI.",
+            }
+        )
+        out_vcf.add_info_to_header(
+            {
+                "ID": "lrtGermlinePoly",
+                "Number": 1,
+                "Type": "Float",
+                "Description": "likelihood ratio estimate of difference from germline heterozygote.",
+            }
+        )
     for a, l in zip(["germline"] + config["annotations"], lambdas_hat):
         out_vcf.add_to_header(f"##lambda_{a}={l}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
-    for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
-        v.INFO["ppGermlinePoly"] = pp_gp
-        write_vcf.write_record(v)
+    if lrt or vaf:
+        for pp_gp, lrt, vaf, vaf_low, vaf_high, v in tqdm(
+            zip(
+                pp_germline_poly,
+                loglik_ratio,
+                mle_p,
+                ci_mle_p[:, 0],
+                ci_mle_p[:, 1],
+                out_vcf,
+            )
+        ):
+            v.INFO["ppGermlinePoly"] = pp_gp
+            # We should get the CI estimates too ...
+            v.INFO["mleVAF"] = vaf
+            v.INFO["lrtGermlinePoly"] = lrt
+            write_vcf.write_record(v)
+    else:
+        for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
+            v.INFO["ppGermlinePoly"] = pp_gp
+            write_vcf.write_record(v)
     write_vcf.close()
     logging.info(f"Wrote annotated VCF output to {out}!")
