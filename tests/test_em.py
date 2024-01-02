@@ -148,6 +148,15 @@ def test_loglik_ratio():
     assert ll_ratio[1] > ll_ratio[2]
 
 
+def test_vaf_est():
+    Theta = np.array([[0.0, 0.05], [0.0, 0.05], [0.0, 0.05]], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    mle_p, _, ci_mle_p = prob_germline.est_vaf_CI()
+    assert np.all(mle_p == ci_mle_p[:, 1])
+    assert np.all(ci_mle_p[:, 0] < ci_mle_p[:, 2])
+
+
 # def test_naive_mle_from_vcf(tmp_path):
 #     clone_sim = ClonalSim(seq_len=1e6, n_clones=10)
 #     clone_sim.simulate_germline()
