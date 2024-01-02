@@ -6,6 +6,7 @@ import msprime
 import numpy as np
 from poly_utils import (
     complete_loglik,
+    complete_loglik2,
     d2_fun,
     geno_loglik,
     incomplete_loglik,
@@ -137,32 +138,32 @@ class ProbGermline:
         logll = complete_loglik(self.K, self.J, lambdas, self.Theta, self.X, logll_p)
         return logll
 
-    def incomplete_logll(self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double")):
-        """Compute the incomplete-data log-likelihood for optimization.
+    # def incomplete_logll(self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double")):
+    #     """Compute the incomplete-data log-likelihood for optimization.
 
-        Note: this assumes that you have the posteriors pre-computed.
+    #     Note: this assumes that you have the posteriors pre-computed.
 
-        """
-        assert gammas_k.size == self.K
-        assert lambdas.size == self.A
-        logll = incomplete_loglik(self.K, self.J, lambdas, gammas_k, self.Theta, self.X)
-        return logll
+    #     """
+    #     assert gammas_k.size == self.K
+    #     assert lambdas.size == self.A
+    #     logll = incomplete_loglik(self.K, self.J, lambdas, gammas_k, self.Theta, self.X)
+    #     return logll
 
-    def opt_lambdas(
-        self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double"), algo="L-BFGS-B"
-    ):
-        """Optimize the lambda parameter weights in the M-step of the EM-algorithm."""
-        assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
-        opt_res = minimize(
-            lambda x: -self.incomplete_logll(gammas_k=gammas_k, lambdas=x),
-            x0=lambdas,
-            method=algo,
-            bounds=[(-30.0, 30.0) for _ in range(self.A)],
-            tol=1e-8,
-            options={"disp": False},
-        )
-        lambda_hat = opt_res.x
-        return lambda_hat
+    # def opt_lambdas(
+    #     self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double"), algo="L-BFGS-B"
+    # ):
+    #     """Optimize the lambda parameter weights in the M-step of the EM-algorithm."""
+    #     assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
+    #     opt_res = minimize(
+    #         lambda x: -self.incomplete_logll(gammas_k=gammas_k, lambdas=x),
+    #         x0=lambdas,
+    #         method=algo,
+    #         bounds=[(-30.0, 30.0) for _ in range(self.A)],
+    #         tol=1e-8,
+    #         options={"disp": False},
+    #     )
+    #     lambda_hat = opt_res.x
+    #     return lambda_hat
 
     def naive_mle(self, algo="L-BFGS-B", disp=False, logll_p=None):
         """Naive optimization of the model log-likelihood.
@@ -184,34 +185,53 @@ class ProbGermline:
         lambda_hat = opt_res.x
         return lambda_hat
 
-    def em_algo(
-        self,
-        lambdas=np.array([0.0, 0.0], dtype="double"),
-        algo="L-BFGS-B",
-        delta_logll=1e-6,
-        log=True,
-    ):
-        """EM-algorithm to estimate parameters for prior of germline polymorphism."""
-        assert lambdas.size == self.A
-        lambdas_prev = lambdas
-        loglls = []
-        loglls.append(self.complete_logll(lambdas=lambdas_prev))
-        cur_delta = 1e9
-        while cur_delta >= delta_logll:
-            # E-step: estimate the expected probability using prev params
-            gammas_k = self.post_prob_poly(lambdas=lambdas_prev)
-            # M-step: maximize the parameters
-            lambdas_hat = self.opt_lambdas(
-                gammas_k=gammas_k, lambdas=lambdas_prev, algo=algo
-            )
-            loglls.append(self.complete_logll(lambdas=lambdas_hat))
-            if log:
-                logging.info(f"Log-likelihood {loglls[-1]}, Lambdas: {lambdas_hat}")
-            if loglls[-1] >= loglls[-2]:
-                warnings.warn("Incomplete log-likelihood is not increasing!")
-            cur_delta = np.abs(loglls[-1] - loglls[-2])
-            prev_lambdas = lambdas_hat
-        return np.array(loglls), prev_lambdas
+    def naive_mle2(self, algo="L-BFGS-B", npts=20, disp=False):
+        """Naive optimization of the model log-likelihood.
+
+        NOTE: this is not recommended for large models and largely is implemented for testing.
+        """
+        assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
+        opt_res = minimize(
+            lambda x: -self.complete_logll2(lambdas=x[1:], a0=x[0], npts=npts),
+            x0=np.array([3.0] + [0.0 for _ in range(self.A)], dtype="double"),
+            method=algo,
+            bounds=[(0, 50)] + [(-20.0, 20.0) for _ in range(self.A)],
+            tol=1e-8,
+            options={"disp": disp},
+        )
+        est_hat = opt_res.x
+        a0_hat = est_hat[0]
+        lambda_hat = est_hat[1:]
+        return a0_hat, lambda_hat
+
+    # def em_algo(
+    #     self,
+    #     lambdas=np.array([0.0, 0.0], dtype="double"),
+    #     algo="L-BFGS-B",
+    #     delta_logll=1e-6,
+    #     log=True,
+    # ):
+    #     """EM-algorithm to estimate parameters for prior of germline polymorphism."""
+    #     assert lambdas.size == self.A
+    #     lambdas_prev = lambdas
+    #     loglls = []
+    #     loglls.append(self.complete_logll(lambdas=lambdas_prev))
+    #     cur_delta = 1e9
+    #     while cur_delta >= delta_logll:
+    #         # E-step: estimate the expected probability using prev params
+    #         gammas_k = self.post_prob_poly(lambdas=lambdas_prev)
+    #         # M-step: maximize the parameters
+    #         lambdas_hat = self.opt_lambdas(
+    #             gammas_k=gammas_k, lambdas=lambdas_prev, algo=algo
+    #         )
+    #         loglls.append(self.complete_logll(lambdas=lambdas_hat))
+    #         if log:
+    #             logging.info(f"Log-likelihood {loglls[-1]}, Lambdas: {lambdas_hat}")
+    #         if loglls[-1] >= loglls[-2]:
+    #             warnings.warn("Incomplete log-likelihood is not increasing!")
+    #         cur_delta = np.abs(loglls[-1] - loglls[-2])
+    #         prev_lambdas = lambdas_hat
+    #     return np.array(loglls), prev_lambdas
 
 
 class ClonalSim:
