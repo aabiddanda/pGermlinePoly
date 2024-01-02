@@ -17,8 +17,7 @@ Following this installation, you should be able to run either `pytest` to run th
 
 ## Running `pGermlinePoly`
 
-The core algorithm for annotating a clonal sequencing VCF file is wrapped in the executable `pGermlinePoly`. Fundamentally this
-
+The core algorithm for annotating a clonal sequencing VCF file is wrapped in the executable `pGermlinePoly`.
 
 ```
 Usage: pGermlinePoly [OPTIONS]
@@ -32,8 +31,13 @@ Options:
                                   [required]
   -t, --nthreads INTEGER          Number of threads.  [default: 1]
   -a, --algo [L-BFGS-B|Powell|Nelder-Mead]
-                                  Optimization algorithm for EM-step.
-                                  [default: L-BFGS-B]
+                                  Optimization algorithm for EM-algorithm or
+                                  naive optimization.  [default: L-BFGS-B]
+  -n, --naive                     Numerical optimization of MLE parameters.
+                                  [default: True]
+  --lrt                           Frequentist likelihood ratio test testing
+                                  deviation from germline heterozygote.
+  --vaf                           Estimate the variant allele frequency.
   -o, --out TEXT                  Output VCF file (defaults to stdout)
                                   [default: -; required]
   --help                          Show this message and exit.
@@ -73,6 +77,19 @@ clones:
 germline:
 	- Agermline
 ```
+
+### VAF Estimation
+
+One major goal of clonal sequencing is to estimate the frequency of associated somatic variant, the ``variant allele fraction'' or VAF. If clear genotyping data is available then the maximum-likelihood estimator of the VAF is a good one, but uncertainty of this quantity is rarely reported.
+
+We use a frequentist approach and use the inverse of the Fisher Information for each site as a way to quantify the 95% confidence interval of the VAF. To include the VAF confidence interval as an annotation in the resulting VCF, use the `--vaf` flag when running `pGermlinePoly`.
+
+### Likelihood Ratio Test for Somatic Variants
+
+We also have implemented a likelihood ratio test for site-level detection of somatic mutations, where the underlying null hypothesis for a human germline heterozygote is $H_0: VAF = 0.5$ (assuming that the sampling process is unbiased). We directly evaluate this using the per-site likelihood under the maximum-likelihood estimate of the VAF, and compare to the null hypothesis. Note that this null hypothesis assumes diploid and largely focuses on heterozygotes so may be inaccurate in regions where there is a germline deletion or duplication.
+
+This can also be used effectively as a frequentist analog of the filtering criteria for a somatic mutation (which notably does not rely on annotations for priors), and p-values can also be constructed under a chi-squared distribution. In order to annotate the resulting VCF with the likelihood ratio test statistic use the `--lrt` flag.
+
 
 ## Simulating somatic clonal sequencing data
 
