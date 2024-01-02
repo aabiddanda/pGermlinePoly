@@ -115,7 +115,7 @@ class ProbGermline:
         logll_null = np.zeros(self.K)
         for k in range(self.K):
             logll_null[k] = single_var_logll(J=self.J, X=self.X[k, :, :], p=0.5)
-        ll_ratio = -2.0 * (logll_null - logll_p)
+        ll_ratio = -2 * (logll_null - logll_p)
         return ll_ratio
 
     def complete_logll(

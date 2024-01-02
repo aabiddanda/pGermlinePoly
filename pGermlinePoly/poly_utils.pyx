@@ -100,7 +100,7 @@ def d2_fun(f, x, h=1e-5):
 
     https://en.wikipedia.org/wiki/Symmetric_derivative#The_second_symmetric_derivative
     """
-    return (f(x + h) - 2*f(x) + f(x - h)) / (h**2)
+    return (f(x+h) - 2*f(x) + f(x-h)) / (h**2)
 
 cpdef double single_var_logll(int J, double[:,:] X, double p):
     """Likelihood function for a single-variant."""
@@ -158,7 +158,6 @@ cpdef double complete_loglik2(int K, int J,  double[:] lambdas, double[:,:] Thet
         pi0_k = log_prior(lambdas, Theta[k,:])
         logll += logaddexp(log(pi0_k) + logsumexp(x0), log(1.0 - pi0_k) + logsumexp(x1))
     return logll
-
 
 
 cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X, double[:] logll_p):
