@@ -120,22 +120,30 @@ class ProbGermline:
         return ll_ratio
 
     def complete_logll(
-        self, lambdas=np.array([0.0, 0.0], dtype="double"), logll_p=None
+        self, lambdas=np.array([0.0, 0.0], dtype="double"), a0=5.0, npts=20
     ):
         """Compute the complete data log-likelihood.
 
         Arguments:
             - lambdas (`np.array`): weight parameters for logistic priors.
+            - a0 (`float`): the parameter for the beta distribution
+            - npts (`int`): the number of points to evaluate the likelihood
 
         Returns:
-            - logll (`float`): log-likelihood of the model.
+            - logll (`float`): approximate log-likelihood of the model.
 
         """
         assert lambdas.size == self.A
-        # run the complete log-likelihood helper function ...
-        if logll_p is None:
-            _, logll_p = self.mle_est_loglik()
-        logll = complete_loglik(self.K, self.J, lambdas, self.Theta, self.X, logll_p)
+        assert npts > 2
+        logll = complete_loglik2(
+            K=self.K,
+            J=self.J,
+            lambdas=lambdas,
+            Theta=self.Theta,
+            X=self.X,
+            a0=a0,
+            npts=npts,
+        )
         return logll
 
     # def incomplete_logll(self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double")):
@@ -165,30 +173,19 @@ class ProbGermline:
     #     lambda_hat = opt_res.x
     #     return lambda_hat
 
-    def naive_mle(self, algo="L-BFGS-B", disp=False, logll_p=None):
+    def naive_mle(self, algo="L-BFGS-B", npts=20, disp=False):
         """Naive optimization of the model log-likelihood.
 
         NOTE: this is not recommended for large models and largely is implemented for testing.
-        """
-        assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
-        if logll_p is None:
-            _, logll_p = self.mle_est_loglik()
-        assert logll_p.size == self.K
-        opt_res = minimize(
-            lambda x: -self.complete_logll(lambdas=x, logll_p=logll_p),
-            x0=np.array([0.0 for _ in range(self.A)], dtype="double"),
-            method=algo,
-            bounds=[(-30.0, 30.0) for _ in range(self.A)],
-            tol=1e-8,
-            options={"disp": disp},
-        )
-        lambda_hat = opt_res.x
-        return lambda_hat
 
-    def naive_mle2(self, algo="L-BFGS-B", npts=20, disp=False):
-        """Naive optimization of the model log-likelihood.
+        Arguments:
+            - algo (`string`): Type of optimization algorithm for likelihood.
+            - npts (`int`): the number of points to evaluate the likelihood
 
-        NOTE: this is not recommended for large models and largely is implemented for testing.
+        Returns:
+            - a0_hat (`float`): approximate log-likelihood of the model.
+            - lambda_hat (`np.array`): weight parameters for priors
+
         """
         assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
         opt_res = minimize(

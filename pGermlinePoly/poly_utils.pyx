@@ -2,10 +2,15 @@
 # cython: cdivision=True
 # cython: wraparound=False
 
-from libc.math cimport erf, exp, log, log1p, log10, pi, sqrt
+from libc.math cimport erf, exp, lgamma, log, log1p, log10, pi, sqrt
 
 import numpy as np
 from scipy.optimize import minimize_scalar
+
+
+cdef extern from "math.h":
+    float INFINITY
+
 
 
 cpdef double logaddexp(double a, double b):
@@ -41,7 +46,10 @@ cpdef double log_prior(double [:] l, double[:] a):
 
 cdef double beta_logpdf(double x, double a=1.0, double b=1.0):
     """The unscaled log PDF of a specific beta distribution."""
-    return (a - 1.0)*log(x) + (b-1.)*log(1.-x)
+    if x == 0.0 or x == 1.0:
+        return -INFINITY
+    else:
+        return (a - 1.0)*log(x) + (b - 1.0)*log(1.0 - x) - (lgamma(a) + lgamma(b) - lgamma(a + b))
 
 cdef double[:] phred_rescale(double[:] raw_gl):
     """Perform phred-based rescaling of the genotype likelihoods."""
@@ -144,18 +152,19 @@ cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta,
     return logll
 
 
-cpdef double complete_loglik2(int K, int J,  double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
-    cdef double logll = 0.0
+cpdef double complete_loglik2(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
+    # NOTE: could we simply evaluate this at the MLE VAF estimate to lower the complexity?
+    cdef int k,j,p;
+    cdef double logll = 0.0;
     cdef double pi0_k;
-    cdef int k,j, p;
-    cdef double[:] x0;
-    cdef double[:] x1;
+    cdef double[:] x0 = np.zeros(npts);
+    cdef double[:] x1 = np.zeros(npts);
     cdef double[:] ps = np.linspace(0, 1, npts)
     for k in range(K):
-        for p in range(npts):
-            x0[p] = beta_logpdf(ps[p], a=a0, b=a0) + single_var_logll(J,X=X[k,:,:], p=ps[p])
-            x1[p] = beta_logpdf(ps[p]) + single_var_logll(J,X=X[k,:,:], p=ps[p])
         pi0_k = log_prior(lambdas, Theta[k,:])
+        for p in range(npts):
+            x0[p] = beta_logpdf(ps[p], a=a0, b=a0) + single_var_logll(J=J, X=X[k,:,:], p=ps[p])
+            x1[p] = beta_logpdf(ps[p], a=1.0, b=1.0) + single_var_logll(J=J, X=X[k,:,:], p=ps[p])
         logll += logaddexp(log(pi0_k) + logsumexp(x0), log(1.0 - pi0_k) + logsumexp(x1))
     return logll
 
