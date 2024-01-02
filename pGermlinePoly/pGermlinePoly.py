@@ -92,7 +92,7 @@ class ProbGermline:
             post_k[k] = post_poly_num - logaddexp(post_poly_num, post_poly_denom)
         return post_k
 
-    def est_vaf_CI(self):
+    def est_vaf_CI(self, h=1e-5):
         """Estimate the variant allele frequency from likelihoods across all the clonal data.
 
         Uses the fisher information to account for heterogeneous sequencing depth.
@@ -101,10 +101,11 @@ class ProbGermline:
         ci_mle_p = np.zeros(shape=(self.K, 3))
         for k in range(self.K):
             ll = lambda p: single_var_logll(J=self.J, X=self.X[k, :, :], p=p)
-            fisher_I = d2_fun(ll, mle_p[k])
-            ci_mle_p[k, 0] = mle_p[k] - 1.96 / np.sqrt(self.J * fisher_I)
+            # Take the negative of the expectation of the second derivative ...
+            fisher_I_inv = 1.0 / -d2_fun(ll, mle_p[k], h=h)
+            ci_mle_p[k, 0] = mle_p[k] - 1.96 * np.sqrt(1.0 / self.J * fisher_I_inv)
             ci_mle_p[k, 1] = mle_p[k]
-            ci_mle_p[k, 2] = mle_p[k] + 1.96 / np.sqrt(self.J * fisher_I)
+            ci_mle_p[k, 2] = mle_p[k] + 1.96 * np.sqrt(1.0 / self.J * fisher_I_inv)
         return mle_p, logll_p, ci_mle_p
 
     def loglik_ratio(self, logll_p=None):
