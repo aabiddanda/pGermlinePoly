@@ -140,19 +140,8 @@ def mle_est_loglik(K, J, X):
         logll_p[k] = -ll(mle_p[k])
     return mle_p, logll_p
 
-cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, double[:] logll_p):
-    """Cython helper for computing the full-data log-likelihood for pGermlinePoly."""
-    cdef double logll = 0.0;
-    cdef int k,j;
-    for k in range(K):
-        pi_k = log_prior(lambdas, Theta[k, :])
-        log_nonpoly = logll_p[k]
-        log_poly = single_var_logll(J, X=X[k,:,:], p=0.5)
-        logll += logaddexp(log(pi_k) + log_poly, log(1.0 - pi_k) + log_nonpoly)
-    return logll
 
-
-cpdef double complete_loglik2(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
+cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
     # NOTE: could we simply evaluate this at the MLE VAF estimate to lower the complexity?
     cdef int k,j,p;
     cdef double logll = 0.0;
@@ -169,13 +158,22 @@ cpdef double complete_loglik2(int K, int J, double[:] lambdas, double[:,:] Theta
     return logll
 
 
-cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X, double[:] logll_p):
-    """Cython helper function for computing the incomplete log-likelihood."""
+cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
+    """Cython helper function for computing the incomplete log-likelihood.
+
+    NOTE: I might be using the terms here incorrectly slightly ...
+    """
     cdef double logll = 0.0;
-    cdef int k, j;
+    cdef double pi0_k;
+    cdef int k, j, p;
+    cdef double[:] x0 = np.zeros(npts);
+    cdef double[:] x1 = np.zeros(npts);
+    cdef double[:] ps = np.linspace(0, 1, npts)
     for k in range(K):
-        pi_k = log_prior(lambdas, Theta[k,:])
-        log_nonpoly = logll_p[k]
-        log_poly = single_var_logll(J, X=X[k,:,:], p=0.5)
-        logll += exp(gammas_k[k]) * (log(pi_k) + log_poly) + (1.0 - exp(gammas_k[k])) * (log(1.0 - pi_k) + log_nonpoly)
+        pi0_k = log_prior(lambdas, Theta[k,:])
+        for p in range(npts):
+            x0[p] = beta_logpdf(ps[p], a=a0, b=a0) + single_var_logll(J=J, X=X[k,:,:], p=ps[p])
+            x1[p] = beta_logpdf(ps[p], a=1.0, b=1.0) + single_var_logll(J=J, X=X[k,:,:], p=ps[p])
+        # This should add to the incomplete log-l
+        logll += exp(gammas_k[k]) * (log(pi0_k) + logsumexp(x0)) + (1.0 - exp(gammas_k[k])) * (log(1.0 - pi0_k) + logsumexp(x1))
     return logll

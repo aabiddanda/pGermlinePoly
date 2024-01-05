@@ -11,7 +11,7 @@ from pGermlinePoly.io import (
     invert_pl,
 )
 
-# The second variant should definitely have some kind of
+# The second variant should definitely have some contribution
 X = np.array(
     [
         [invert_pl([10, 0, 5]), invert_pl([4, 0, 5])],
@@ -21,6 +21,32 @@ X = np.array(
     dtype="double",
 )
 Theta = np.array([[2.0, 0.0], [0.0, 0.1], [1.1, np.nan]], dtype="double")
+
+# A stronger example where the first annotation can matter quite a bit ...
+X2 = np.array(
+    [
+        [
+            invert_pl([10, 0, 5]),
+            invert_pl([4, 0, 5]),
+            invert_pl([10, 0, 20]),
+            invert_pl([5, 0, 20]),
+        ],
+        [
+            invert_pl([0, 5, 10]),
+            invert_pl([10, 0, 20]),
+            invert_pl([0, 5, 20]),
+            invert_pl([0, 2, 4]),
+        ],
+        [
+            invert_pl([3, 0, 7]),
+            invert_pl([3, 0, 7]),
+            invert_pl([4, 0, 12]),
+            invert_pl([3, 0, 4]),
+        ],
+    ],
+    dtype="double",
+)
+Theta2 = np.array([[5.0, 0.05], [0.0, 0.05], [5.0, 0.1]], dtype="double")
 
 
 @pytest.mark.parametrize("k,j,a", [(10, 4, 2)])
@@ -90,17 +116,10 @@ def test_complete_logll():
     """Test the implementation of the complete log-likelihood for a very small test-case."""
     prob_germline = ProbGermline(X=X, Theta=Theta)
     prob_germline.impute_anno()
-    _, logll_p = prob_germline.mle_est_loglik()
     # The second log-likelihood should be a better fit since the first annotation should be more predictive of a true germline het...
-    logll1 = prob_germline.complete_logll(
-        lambdas=np.array([2, 2], dtype="double"), logll_p=logll_p
-    )
-    logll2 = prob_germline.complete_logll(
-        lambdas=np.array([3, -1], dtype="double"), logll_p=logll_p
-    )
+    logll1 = prob_germline.complete_logll(lambdas=np.array([2, 2], dtype="double"))
+    logll2 = prob_germline.complete_logll(lambdas=np.array([3, -1], dtype="double"))
     assert logll2 >= logll1
-    assert logll2 < 0
-    assert logll1 < 0
 
 
 def test_naive_mle():
@@ -108,39 +127,29 @@ def test_naive_mle():
     prob_germline = ProbGermline(X=X, Theta=Theta)
     prob_germline.impute_anno()
     _, logll_p = prob_germline.mle_est_loglik()
-    mle_lambdas = prob_germline.naive_mle(logll_p=logll_p)
+    a0_hat, mle_lambdas = prob_germline.naive_mle()
     logll1 = prob_germline.complete_logll(lambdas=np.array([1.0, 1.0], dtype="double"))
     logll2 = prob_germline.complete_logll(lambdas=mle_lambdas)
     assert logll2 >= logll1
 
 
+def test_naive_mle2():
+    """Test the implementation of the complete log-likelihood for a very small test-case."""
+    prob_germline = ProbGermline(X=X2, Theta=Theta2)
+    prob_germline.impute_anno()
+    _, logll_p = prob_germline.mle_est_loglik()
+    a0_hat, mle_lambdas = prob_germline.naive_mle()
+    logll1 = prob_germline.complete_logll(lambdas=np.array([1.0, 1.0], dtype="double"))
+    logll2 = prob_germline.complete_logll(lambdas=mle_lambdas)
+    assert logll2 >= logll1
+    # There should be different signs for each of these predictions ...
+    assert mle_lambdas[0] > 0
+    assert mle_lambdas[1] < 0
+
+
 def test_loglik_ratio():
     """Testing for sign of lambda estimate."""
-    X = np.array(
-        [
-            [
-                invert_pl([10, 0, 5]),
-                invert_pl([4, 0, 5]),
-                invert_pl([10, 0, 20]),
-                invert_pl([5, 0, 20]),
-            ],
-            [
-                invert_pl([0, 5, 10]),
-                invert_pl([10, 0, 20]),
-                invert_pl([0, 5, 20]),
-                invert_pl([0, 2, 4]),
-            ],
-            [
-                invert_pl([3, 0, 7]),
-                invert_pl([3, 0, 7]),
-                invert_pl([4, 0, 12]),
-                invert_pl([3, 0, 4]),
-            ],
-        ],
-        dtype="double",
-    )
-    Theta = np.array([[5.0, 0.05], [0.0, 0.05], [5.0, 0.1]], dtype="double")
-    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline = ProbGermline(X=X2, Theta=Theta2)
     prob_germline.impute_anno()
     ll_ratio = prob_germline.loglik_ratio()
     # The true somatic mutation below should be the main case here ...
@@ -157,37 +166,35 @@ def test_vaf_est():
     assert np.all(ci_mle_p[:, 0] < ci_mle_p[:, 2])
 
 
-# def test_naive_mle_from_vcf(tmp_path):
-#     clone_sim = ClonalSim(seq_len=1e6, n_clones=10)
-#     clone_sim.simulate_germline()
-#     clone_sim.simulate_clone_genealogy(age=80)
-#     clone_sim.sim_somatic_mutations(age=80, mut_rate=1e-6)
-#     assert clone_sim.n_somatic_mut > 0
-#     clone_sim.simulate_germline_somatic_muts()
-#     assert np.any(clone_sim.germline_somatic_pl != 0)
-#     clone_sim.simulate_clonal_germline_muts()
-#     assert np.any(clone_sim.germline_clone_pl != 0)
-#     # Setup the output VCF file and write it out
-#     d = tmp_path / "em_vcf_test"
-#     d.mkdir()
-#     vcf_fp = d / "test.vcf"
-#     clone_sim.write_vcf(out=vcf_fp)
-#     # Reread the vcf file with the appropriate samples & create annotations ...
-#     germline_samples = ["Agermline"]
-#     clone_samples = [f"Aclone{i}" for i in range(10)]
-#     germline_vcf = VCF(vcf_fp, samples=germline_samples, threads=1)
-#     germline_anno = create_germline_anno(germline_vcf)
-#     clonal_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
-#     clone_pl = create_clonal_pl_matrix(clonal_vcf)
-#     anno_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
-#     anno = create_anno(anno_vcf, annotations=["ExternalAF", "AF"])
-#     # Make sure that the dimensions make sense here ...
-#     full_anno = np.vstack([germline_anno, anno]).T
-#     p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
-#     p_germline.impute_anno()
-#     mle_lambdas = p_germline.naive_mle()
-#     logll1 = p_germline.complete_logll(
-#         lambdas=np.array([0.0, 0.0, 0.0], dtype="double")
-#     )
-#     logll2 = p_germline.complete_logll(lambdas=mle_lambdas)
-#     assert logll2 >= logll1
+def test_naive_mle_from_vcf(tmp_path):
+    clone_sim = ClonalSim(seq_len=1e6, n_clones=10)
+    clone_sim.simulate_germline()
+    clone_sim.simulate_clone_genealogy(age=80)
+    clone_sim.sim_somatic_mutations(age=80, mut_rate=1e-6)
+    assert clone_sim.n_somatic_mut > 0
+    clone_sim.simulate_germline_somatic_muts()
+    assert np.any(clone_sim.germline_somatic_pl != 0)
+    clone_sim.simulate_clonal_germline_muts()
+    assert np.any(clone_sim.germline_clone_pl != 0)
+    # Setup the output VCF file and write it out
+    d = tmp_path / "em_vcf_test"
+    d.mkdir()
+    vcf_fp = d / "test.vcf"
+    clone_sim.write_vcf(out=vcf_fp)
+    # Reread the vcf file with the appropriate samples & create annotations ...
+    germline_samples = ["Agermline"]
+    clone_samples = [f"Aclone{i}" for i in range(10)]
+    germline_vcf = VCF(vcf_fp, samples=germline_samples, threads=1)
+    germline_anno = create_germline_anno_gl(germline_vcf)
+    clonal_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
+    clone_pl = create_clonal_pl_matrix(clonal_vcf)
+    anno_vcf = VCF(vcf_fp, samples=clone_samples, threads=1)
+    anno = create_anno(anno_vcf, annotations=["ExternalAF"])
+    # Make sure that the dimensions make sense here ...
+    full_anno = np.vstack([germline_anno, anno]).T
+    p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
+    p_germline.impute_anno()
+    a0_hat, mle_lambdas = p_germline.naive_mle()
+    logll1 = p_germline.complete_logll(lambdas=np.array([0.0, 0.0], dtype="double"))
+    logll2 = p_germline.complete_logll(lambdas=mle_lambdas)
+    assert logll2 >= logll1
