@@ -13,6 +13,7 @@ from poly_utils import (
     logaddexp,
     logsumexp,
     mle_est_loglik,
+    posterior_poly,
     single_var_logll,
 )
 from scipy.optimize import minimize, minimize_scalar
@@ -64,7 +65,7 @@ class ProbGermline:
         return pi_k
 
     def post_prob_poly(
-        self, lambdas=np.array([0.0, 0.0], dtype="double"), logll_p=None
+        self, lambdas=np.array([0.0, 0.0], dtype="double"), npts=20, a0=10.0
     ):
         """Posterior probability of being germline polymorphic.
 
@@ -77,19 +78,18 @@ class ProbGermline:
         """
         assert lambdas.size == self.A
         assert np.all(~np.isnan(lambdas))
-        if logll_p is not None:
-            assert logll_p.size == self.K
-        else:
-            _, logll_p = mle_est_loglik(J=self.J, K=self.K, X=self.X)
+        assert a0 > 1.0
+
         post_k = np.zeros(self.K)
         for k in range(self.K):
-            # Estimate the prior based on the weighted annotations
-            pi_k = log_prior(lambdas, self.Theta[k, :])
-            post_poly_num = np.log(pi_k) + single_var_logll(
-                J=self.J, X=self.X[k, :, :], p=0.5
+            post_k[k] = posterior_poly(
+                J=self.J,
+                lambdas=lambdas,
+                Theta=self.Theta[k, :],
+                X=self.X[k, :, :],
+                npts=npts,
+                a0=a0,
             )
-            post_poly_denom = np.log(1.0 - pi_k) + logll_p[k]
-            post_k[k] = post_poly_num - logaddexp(post_poly_num, post_poly_denom)
         return post_k
 
     def est_vaf_CI(self, h=1e-5):
@@ -234,7 +234,7 @@ class ProbGermline:
             cur_delta = np.abs(loglls[-1] - loglls[-2])
             lambdas_prev = lambdas_hat
             a0_prev = a0_hat
-        return np.array(loglls), lambdas_prev, a0_prev
+        return np.array(loglls), a0_prev, lambdas_prev
 
 
 class ClonalSim:

@@ -61,6 +61,14 @@ logging.basicConfig(
     help="Numerical optimization of MLE parameters.",
 )
 @click.option(
+    "--eps",
+    "-e",
+    required=False,
+    default=1e-4,
+    type=float,
+    help="Stopping criteria for log-likelihood changes in the EM-algorithm",
+)
+@click.option(
     "--lrt",
     required=False,
     default=False,
@@ -84,7 +92,7 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
-def main(vcf, config, nthreads, algo, naive, lrt, vaf, out):
+def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, out):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
     config = validate_config(config)
@@ -112,23 +120,26 @@ def main(vcf, config, nthreads, algo, naive, lrt, vaf, out):
     p_germline.impute_anno()
     if naive:
         logging.info("Starting Numerical MLE estimation!")
-        lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
+        a0_hat, lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
         logging.info("Finished Numerical MLE estimation!")
 
     else:
         logging.info("Starting EM-algorithm...")
-        loglls, lambdas_hat = p_germline.em_algo(
-            algo=algo, lambdas=np.zeros(p_germline.A, dtype="double")
+        loglls, a0_hats, lambdas_hats = p_germline.em_algo(
+            algo=algo,
+            delta_logll=eps,
         )
+        a0_hat = a0_hats[-1]
+        lambdas_hat = lambda_hats[-1]
         logging.info("Finished EM-algorithm!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
-    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
+    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat, a0=a0_hat)
     if lrt or vaf:
-        logging.info("Starting estimation of VAF and likelihood ratio ...")
+        logging.info("Estimating of VAF and likelihood ratio ...")
         mle_p, logll_p, ci_mle_p = p_germline.est_vaf_CI()
         loglik_ratio = p_germline.loglik_ratio(logll_p=logll_p)
         logging.info("Finished estimation of VAF and likelihood ratio!")
-    logging.info(f"Writing VCF output to {out} w/ ppGermlinePoly...")
+    logging.info(f"Writing annotated VCF output to {out} ...")
     out_vcf = VCF(vcf, samples=samples, threads=nthreads)
     out_vcf.add_info_to_header(
         {

@@ -140,6 +140,22 @@ def mle_est_loglik(K, J, X):
         logll_p[k] = -ll(mle_p[k])
     return mle_p, logll_p
 
+cpdef double posterior_poly(int J, double[:] lambdas, double[:] Theta, double[:,:] X, int npts=20, double a0=5.0):
+    """Estimate the posterior probability of germline polymorphism."""
+    cdef int k,j,p;
+    cdef double denom, num, post_prob;
+    cdef double pi0_k;
+    cdef double[:] x0 = np.zeros(npts);
+    cdef double[:] x1 = np.zeros(npts);
+    cdef double[:] ps = np.linspace(0, 1, npts)
+    pi0_k = log_prior(lambdas, Theta)
+    for p in range(npts):
+        x0[p] = beta_logpdf(ps[p], a=a0, b=a0) + single_var_logll(J=J, X=X, p=ps[p])
+        x1[p] = beta_logpdf(ps[p], a=1.0, b=1.0) + single_var_logll(J=J, X=X, p=ps[p])
+    denom = logaddexp(log(pi0_k) + logsumexp(x0), log(1.0 - pi0_k) + logsumexp(x1))
+    num = log(pi0_k) + logsumexp(x0)
+    return num - denom
+
 
 cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
     # NOTE: could we simply evaluate this at the MLE VAF estimate to lower the complexity?
