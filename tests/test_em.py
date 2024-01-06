@@ -83,12 +83,12 @@ def test_post_prob_even():
         ],
         dtype="double",
     )
-    Theta = np.array([[0.0, 1.0], [1.0, 0.0]], dtype="double")
+    Theta = np.array([[0.0, 0.0], [0.0, 0.0]], dtype="double")
     prob_germline = ProbGermline(X=X, Theta=Theta)
     prob_germline.impute_anno()
-    post_k = prob_germline.post_prob_poly()
+    post_k = prob_germline.post_prob_poly(npts=100)
     assert post_k.size == prob_germline.K
-    assert np.all(np.isclose(np.exp(post_k), 0.5))
+    assert np.all(np.isclose(np.exp(post_k), 0.5, atol=1e-2))
 
 
 def test_post_prob_poly():

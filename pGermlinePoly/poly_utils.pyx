@@ -44,7 +44,7 @@ cpdef double log_prior(double [:] l, double[:] a):
     prior_p = 1.0 / (1.0 + exp(-xk))
     return prior_p
 
-cdef double beta_logpdf(double x, double a=1.0, double b=1.0):
+cpdef double beta_logpdf(double x, double a=1.0, double b=1.0):
     """The unscaled log PDF of a specific beta distribution."""
     if x == 0.0 or x == 1.0:
         return -INFINITY
