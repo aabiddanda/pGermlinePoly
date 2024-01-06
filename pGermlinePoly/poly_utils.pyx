@@ -96,7 +96,7 @@ cdef double geno_gl(int alt_reads, int tot_reads, int a1=0, int a2=0, double q=3
 cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
     """Actual genotype likelihood computation."""
     cdef double[:] norm_gl;
-    raw_gl = np.array([0.0, 0.0, 0.0])
+    cdef double raw_gl[3];
     raw_gl[0] = geno_gl(alt_reads, tot_reads, a1=0, a2=0, q=q)
     raw_gl[1] = 2*geno_gl(alt_reads, tot_reads, a1=1, a2=0, q=q)
     raw_gl[2] = geno_gl(alt_reads, tot_reads, a1=1, a2=1, q=q)
@@ -114,7 +114,7 @@ cpdef double single_var_logll(int J, double[:,:] X, double p):
     """Likelihood function for a single-variant."""
     cdef double logll = 0.0;
     cdef int j;
-    cdef double[:] xgl = np.array([0.0, 0.0, 0.0])
+    cdef double xgl[3];
     for j in range(J):
         # Set all of the underlying variables here ...
         xgl[0] = 2*log(1.0-p) + X[j,0]
