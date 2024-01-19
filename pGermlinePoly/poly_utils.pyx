@@ -33,6 +33,19 @@ cpdef double logsumexp(double[:] x):
         c += exp(x[i] - m)
     return m + log(c)
 
+cpdef double logtrapezoid(double[:] x, double[:] ps):
+    """Trapezoid rule in log-space."""
+    cdef double delta;
+    cdef double integrand = 0.0;
+    cdef int i, m;
+    m = ps.size
+    for i in range(1, m):
+        delta = log(ps[i] - ps[i-1])
+        integrand = logaddexp(integrand, logaddexp(x[i] + delta, x[i-1] + delta))
+    integrand = integrand - log(2.0)
+    return integrand
+
+
 cpdef double log_prior(double [:] l, double[:] a):
     """Cython implementation of the logistic function and log-calculation."""
     cdef int i, n;

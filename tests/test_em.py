@@ -112,6 +112,30 @@ def test_post_prob_poly():
     assert np.exp(post_k[0]) > np.exp(post_k[1])
 
 
+def test_post_prob_poly_strong():
+    """Simple simulation with just two points here."""
+    X = np.array(
+        [
+            [invert_pl([20, 0, 20]), invert_pl([0, 10, 30])],
+            [invert_pl([20, 0, 40]), invert_pl([20, 0, 30])],
+            [invert_pl([10, 0, 40]), invert_pl([10, 0, 20])],
+        ],
+        dtype="double",
+    )
+    Theta = np.array([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    a0_hat, mle_lambdas = prob_germline.naive_mle()
+    post_k = prob_germline.post_prob_poly(lambdas=mle_lambdas, a0=a0_hat)
+    assert post_k.size == prob_germline.K
+    # These should all be values less than 0.0 in log-space
+    assert np.all(post_k <= 0)
+    # The first value should be more likely to be a germline variant ...
+    assert post_k[1] > post_k[0]
+    assert post_k[2] > post_k[0]
+    assert np.exp(post_k[0]) > 0.8
+
+
 def test_complete_logll():
     """Test the implementation of the complete log-likelihood for a very small test-case."""
     prob_germline = ProbGermline(X=X, Theta=Theta)
