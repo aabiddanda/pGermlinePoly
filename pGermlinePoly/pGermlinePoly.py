@@ -15,6 +15,7 @@ from poly_utils import (
     mle_est_loglik,
     posterior_poly,
     single_var_logll,
+    var_loglik,
 )
 from scipy.optimize import minimize, minimize_scalar
 from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
@@ -235,6 +236,36 @@ class ProbGermline:
             lambdas_prev = lambdas_hat
             a0_prev = a0_hat
         return np.array(loglls), a0_prev, lambdas_prev
+
+
+class MutectLOD:
+    """Implementation of the LOD Score from Mutect2 + Williams et al."""
+
+    def __init__(self, X):
+        """Initialize object for LOD-score definition.
+
+
+        Arguments:
+            - X (`np.array`): a M x K x 2 matrix of read counts
+        """
+        self.X = X
+
+    def mutect_likelihood(self):
+        """Compute the mutect likelihood of a germline vs. somatic variant."""
+        m = self.X.shape[0]
+        lod_scores = np.zeros(shape=(2, m))
+        for i in range(m):
+            # Obtain the MLE effect estimate
+            mle_f = X[i, :, 0].sum() / X[i, :, :].sum()
+            lod_m0 = var_loglik(alt_reads, ref_reads, f=0.0)
+            lod_mf = var_loglik(alt_reads, ref_reads, f=mle_f)
+            lod_scores[0, i] = lod_m0
+            lod_scores[1, i] = lod_mf
+        self.lod = lod_scores
+
+    def lod_scores(self):
+        """Compute the LOD scores."""
+        pass
 
 
 class ClonalSim:

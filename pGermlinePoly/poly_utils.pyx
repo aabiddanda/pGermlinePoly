@@ -37,11 +37,15 @@ cpdef double logtrapezoid(double[:] x, double[:] ps):
     """Trapezoid rule in log-space."""
     cdef double delta;
     cdef double integrand = 0.0;
+    cdef double[:] x0, x1;
     cdef int i, m;
     m = ps.size
     for i in range(1, m):
         delta = log(ps[i] - ps[i-1])
-        integrand = logaddexp(integrand, logaddexp(x[i] + delta, x[i-1] + delta))
+        x0[i-1] = x[i] + delta
+        x1[i-1] = x[i-1] + delta
+
+    integrand = logaddexp(logsumexp(x0), logsumexp(x1))
     integrand = integrand - log(2.0)
     return integrand
 
@@ -115,6 +119,17 @@ cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
     raw_gl[2] = geno_gl(alt_reads, tot_reads, a1=1, a2=1, q=q)
     norm_gl = phred_rescale(raw_gl)
     return norm_gl
+
+cpdef double var_loglik(int ref_reads, int alt_reads, double f, double q=30.0):
+    """Calculate the likelihood """
+    cdef double logl = 0.0;
+    cdef double ref_logll, alt_logll;
+    cdef double eps;
+    eps = 10**(-q/10)
+    ref_logll = ref_reads * log(f**eps /3 + (1 - f)*(1 - eps))
+    alt_logll = alt_reads * log(f * (1 - eps) + (1 - f)**eps / 3 + eps / 3)
+    logl = ref_logll + alt_logll
+    return logl
 
 def d2_fun(f, x, h=1e-5):
     """Symmetric second derivative function for log-likelihood.
