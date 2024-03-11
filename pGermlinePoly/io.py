@@ -107,3 +107,25 @@ def create_clonal_pl_matrix(vcf):
             X.append(np.zeros(shape=(len(vcf.samples), 3)))
     X = np.stack(X)
     return X
+
+
+def create_read_matrix(vcf):
+    """
+    Create a matrix of read-counts from clonal samples.
+
+    The resulting matrix is a K x J x 2 matrix with the read-counts averaged across all clonal samples.
+    """
+    assert vcf.contains("AD")
+    assert len(vcf.samples) > 1
+    X = []
+    for v in tqdm(vcf):
+        if v.is_snp and (len(v.ALT) == 1):
+            x = v.format("AD")
+            assert x.ndim == 2
+            A = x
+            X.append(A)
+        else:
+            # NOTE: this could be replaced with nans as well...
+            X.append(np.zeros(shape=(len(vcf.samples), 2)))
+    X = np.stack(X)
+    return X

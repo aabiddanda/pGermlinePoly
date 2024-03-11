@@ -85,6 +85,14 @@ logging.basicConfig(
     help="Estimate the variant allele frequency.",
 )
 @click.option(
+    "--mutect",
+    required=False,
+    default=False,
+    is_flag=True,
+    type=bool,
+    help="LOD Score from Mutect2.",
+)
+@click.option(
     "--out",
     "-o",
     required=True,
@@ -139,6 +147,10 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, out):
         mle_p, logll_p, ci_mle_p = p_germline.est_vaf_CI()
         loglik_ratio = p_germline.loglik_ratio(logll_p=logll_p)
         logging.info("Finished estimation of VAF and likelihood ratio!")
+    if mutect2:
+        logging.info("Estimating LOD Score under the Mutect2 Model ...")
+        # TODO: do something here ...
+        logging.info("Estimated LOD under Mutect2 model!")
     logging.info(f"Writing annotated VCF output to {out} ...")
     out_vcf = VCF(vcf, samples=samples, threads=nthreads)
     out_vcf.add_info_to_header(
@@ -164,6 +176,15 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, out):
                 "Number": 1,
                 "Type": "Float",
                 "Description": "likelihood ratio estimate of difference from germline heterozygote.",
+            }
+        )
+    if mutect2:
+        out_vcf.add_info_to_header(
+            {
+                "ID": "lodMutect",
+                "Number": 1,
+                "Type": "Float",
+                "Description": "LOD Score from Mutect.",
             }
         )
     for a, l in zip(["germline"] + config["annotations"], lambdas_hat):

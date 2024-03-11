@@ -121,7 +121,7 @@ cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
     return norm_gl
 
 cpdef double var_loglik(int ref_reads, int alt_reads, double f, double q=30.0):
-    """Calculate the likelihood """
+    """Calculate the likelihood of the underlying reads given the allele frequency."""
     cdef double logl = 0.0;
     cdef double ref_logll, alt_logll;
     cdef double eps;

@@ -244,27 +244,28 @@ class MutectLOD:
     def __init__(self, X):
         """Initialize object for LOD-score definition.
 
-
         Arguments:
             - X (`np.array`): a M x K x 2 matrix of read counts
         """
         self.X = X
 
-    def mutect_likelihood(self):
+    def lod_scores(self):
         """Compute the mutect likelihood of a germline vs. somatic variant."""
         m = self.X.shape[0]
         lod_scores = np.zeros(shape=(2, m))
         for i in range(m):
-            # Obtain the MLE effect estimate
-            mle_f = X[i, :, 0].sum() / X[i, :, :].sum()
+            # Obtain the MLE estimate of the alternative allele frequency
+            mle_f = self.X[i, :, 1].sum() / self.X[i, :, :].sum()
+            alt_reads = self.X[i, :, 1].sum()
+            ref_reads = self.X[i, :, 0].sum()
             lod_m0 = var_loglik(alt_reads, ref_reads, f=0.0)
             lod_mf = var_loglik(alt_reads, ref_reads, f=mle_f)
             lod_scores[0, i] = lod_m0
             lod_scores[1, i] = lod_mf
         self.lod = lod_scores
 
-    def lod_scores(self):
-        """Compute the LOD scores."""
+    def pgermline(self, germline_anno, snp_af):
+        """Compute posterior LOD score using the known germline annotation."""
         pass
 
 
