@@ -288,7 +288,7 @@ class ClonalSim:
         afs=[0.31699444395046117, 6.067159920986527],
         het_rate=1e-3,
         mean_coverage=15.0,
-        var_coverage=5.0,
+        sd_coverage=5.0,
         mut_rate=1.2e-8,
         q=30,
         seed=42,
@@ -306,7 +306,7 @@ class ClonalSim:
             - ClonalSim object
         """
         assert mean_coverage > 0
-        assert var_coverage > 0
+        assert sd_coverage > 0
         assert mut_rate > 0
         assert seed > 0
         np.random.seed(seed)
@@ -335,7 +335,7 @@ class ClonalSim:
         mut_pl = np.zeros(shape=(tot_muts, 3))
         # Sample the total number of reads approximately from a normal distribution
         mut_tot_reads = np.round(
-            norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage), size=tot_muts)
+            norm.rvs(loc=mean_coverage, scale=sd_coverage, size=tot_muts)
         ).astype(int)
         mut_tot_reads[mut_tot_reads <= 0] = 0
         mut_alt_reads = binom.rvs(n=mut_tot_reads, p=0.5)
@@ -369,7 +369,7 @@ class ClonalSim:
         self.genealogy = ts.at(0.0)
 
     def sim_somatic_mutations(
-        self, age=45, mut_rate=5e-9, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
+        self, age=45, mut_rate=5e-9, mean_coverage=15.0, sd_coverage=5.0, q=30, seed=42
     ):
         """Simulate somatic mutations on branches of a latent somatic genealogy.
 
@@ -377,7 +377,7 @@ class ClonalSim:
             - age (`int`): the age of the individual in years
             - mut_rate (`float`): the somatic mutation rate in terms of /bp/year (note this is the diploid rate)
             - mean_coverage (`float`): mean coverage for clone.
-            - var_coverage (`float`): variance in coverage for clone.
+            - sd_coverage (`float`): std. deviation in coverage for clone.
             - q (`int`): phred-scaled read-quality.
             - seed (`int`): random number seed.
         """
@@ -386,7 +386,7 @@ class ClonalSim:
         assert mut_rate > 0.0
         assert seed > 0
         assert mean_coverage > 0.0
-        assert var_coverage > 0.0
+        assert sd_coverage > 0.0
         assert q > 0
         np.random.seed(seed)
         # Strong check that the appropriate number of leaves are available ...
@@ -413,12 +413,11 @@ class ClonalSim:
                 for _ in range(n_mut):
                     # Sample the position of the variant ...
                     cur_pos = uniform.rvs(loc=0, scale=self.seq_len)
-                    # Sample total read-counts for the
+                    # Sample total read-counts for the somatic mutations ...
                     cur_tot_reads = np.round(
-                        norm.rvs(
-                            loc=mean_coverage, scale=np.sqrt(var_coverage), size=self.J
-                        )
+                        norm.rvs(loc=mean_coverage, scale=sd_coverage, size=self.J)
                     ).astype(int)
+                    cur_tot_reads[cur_tot_reads <= 0] = 0
                     cur_alt_reads = np.zeros(self.J, dtype=int)
                     for lv in leaves:
                         # NOTE: in this simulation all somatic mutations are heterozygotes?
@@ -451,11 +450,11 @@ class ClonalSim:
             self.somatic_mut_pl = somatic_mut_pl
 
     def simulate_clonal_germline_muts(
-        self, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
+        self, mean_coverage=15.0, sd_coverage=5.0, q=30, seed=42
     ):
         """Simulate germline mutations in all of the clonal samples."""
         assert mean_coverage > 0
-        assert var_coverage > 0
+        assert sd_coverage > 0
         assert q > 0
         assert seed > 0
         assert self.n_germline_poly > 0
@@ -473,7 +472,7 @@ class ClonalSim:
             np.round(
                 norm.rvs(
                     loc=mean_coverage,
-                    scale=np.sqrt(var_coverage),
+                    scale=sd_coverage,
                     size=int(self.J * self.n_germline_poly),
                 )
             )
@@ -495,12 +494,12 @@ class ClonalSim:
         self.germline_clone_pl = germline_clone_pl
 
     def simulate_germline_somatic_muts(
-        self, mean_coverage=15.0, var_coverage=5.0, q=30, seed=42
+        self, mean_coverage=15.0, sd_coverage=5.0, q=30, seed=42
     ):
         """Simulate the somatic mutations in the germline context."""
         assert self.n_somatic_mut >= 0
         assert mean_coverage > 0
-        assert var_coverage > 0
+        assert sd_coverage > 0
         assert q > 0
         assert seed > 0
         np.random.seed(seed)
@@ -509,7 +508,7 @@ class ClonalSim:
         somatic_pl = np.zeros(shape=(self.n_somatic_mut, 3))
         for i in range(self.n_somatic_mut):
             somatic_tot_reads[i] = np.round(
-                norm.rvs(loc=mean_coverage, scale=np.sqrt(var_coverage))
+                norm.rvs(loc=mean_coverage, scale=sd_coverage)
             ).astype(int)
             somatic_alt_reads[i] = binom.rvs(n=somatic_tot_reads[i], p=0.0)
             somatic_pl[i, :] = geno_loglik(

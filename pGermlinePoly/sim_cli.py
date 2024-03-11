@@ -86,11 +86,11 @@ logging.basicConfig(
     help="Mean coverage in germline sample.",
 )
 @click.option(
-    "--var_germline_cov",
+    "--sd_germline_cov",
     "-v",
     type=float,
     default=5.0,
-    help="Variance in germline coverage.",
+    help="Standard deviation in germline coverage.",
 )
 @click.option(
     "--germline_q",
@@ -107,11 +107,11 @@ logging.basicConfig(
     help="Mean coverage in clone sequencing depth.",
 )
 @click.option(
-    "--var_clone_cov",
+    "--sd_clone_cov",
     "-vc",
     type=float,
     default=5.0,
-    help="Variance in clone sequencing depth.",
+    help="Standard deviation in clone sequencing depth.",
 )
 @click.option(
     "--clone_q",
@@ -160,10 +160,10 @@ def main(
     germline_mu,
     somatic_mu,
     mean_germline_cov,
-    var_germline_cov,
+    sd_germline_cov,
     germline_q,
     mean_clone_cov,
-    var_clone_cov,
+    sd_clone_cov,
     clone_q,
     seed,
     out,
@@ -176,14 +176,14 @@ def main(
     )
     clone_sim = ClonalSim(seq_len=seqlen, n_clones=nclones)
     logging.info(
-        f"Simulating germline variants with {mean_germline_cov} ({var_germline_cov}) coverage ..."
+        f"Simulating germline variants with {mean_germline_cov} ({sd_germline_cov}) coverage ..."
     )
     # NOTE: we currently don't really support AFS input or an estimated heterozygosity rate for scaling ...
     clone_sim.simulate_germline(
         afs=[afs_alpha, afs_beta],
         het_rate=germline_het,
         mean_coverage=mean_germline_cov,
-        var_coverage=var_germline_cov,
+        sd_coverage=sd_germline_cov,
         mut_rate=germline_mu,
         q=germline_q,
         seed=seed,
@@ -195,23 +195,23 @@ def main(
         age=age,
         mut_rate=somatic_mu,
         mean_coverage=mean_clone_cov,
-        var_coverage=var_clone_cov,
+        sd_coverage=sd_clone_cov,
         q=clone_q,
         seed=seed,
     )
     logging.info(
-        f"Simulated {clone_sim.n_somatic_mut} somatic mutations for an individual of age {age} with {mean_clone_cov} ({var_clone_cov}) coverage ...!"
+        f"Simulated {clone_sim.n_somatic_mut} somatic mutations for an individual of age {age} with {mean_clone_cov} ({sd_clone_cov}) coverage ...!"
     )
     logging.info(f"Filling in germline mutation status for {nclones} clones!")
     clone_sim.simulate_germline_somatic_muts(
         mean_coverage=mean_germline_cov,
-        var_coverage=var_germline_cov,
+        sd_coverage=sd_germline_cov,
         q=germline_q,
         seed=seed,
     )
     logging.info("Filling in somatic mutation status for the germline sample!")
     clone_sim.simulate_clonal_germline_muts(
-        mean_coverage=mean_clone_cov, var_coverage=var_clone_cov, q=clone_q, seed=seed
+        mean_coverage=mean_clone_cov, sd_coverage=sd_clone_cov, q=clone_q, seed=seed
     )
     # Setup the output VCF file and write it out
     logging.info(f"Writing out the VCF file to {out}")
