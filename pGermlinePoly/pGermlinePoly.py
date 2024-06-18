@@ -249,24 +249,37 @@ class MutectLOD:
         """
         self.X = X
 
-    def lod_scores(self):
+    def lod_scores(self, q=30.0):
         """Compute the mutect likelihood of a germline vs. somatic variant."""
+        # NOTE: Q should be a per-variant-call readout ...
         m = self.X.shape[0]
-        lod_scores = np.zeros(shape=(2, m))
+        lod_scores = np.zeros(shape=(m, 3))
         for i in range(m):
             # Obtain the MLE estimate of the alternative allele frequency
             mle_f = self.X[i, :, 1].sum() / self.X[i, :, :].sum()
             alt_reads = self.X[i, :, 1].sum()
             ref_reads = self.X[i, :, 0].sum()
-            lod_m0 = var_loglik(alt_reads, ref_reads, f=0.0)
-            lod_mf = var_loglik(alt_reads, ref_reads, f=mle_f)
-            lod_scores[0, i] = lod_m0
-            lod_scores[1, i] = lod_mf
+            lod_m0 = var_loglik(alt_reads, ref_reads, f=0.0, q=q)
+            lod_mf = var_loglik(alt_reads, ref_reads, f=mle_f, q=q)
+            lod_germline = var_loglik(alt_reads, ref_reads, f=0.5, q=q)
+            lod_scores[i, 0] = lod_m0
+            lod_scores[i, 1] = lod_mf
+            lod_scores[i, 2] = lod_germline
         self.lod = lod_scores
 
-    def pgermline(self, germline_anno, snp_af):
-        """Compute posterior LOD score using the known germline annotation."""
-        pass
+    def infer_germline_weights(self, germline_anno, annos):
+        """Infer MLE estimates for the germline contributions."""
+        assert self.lod is not None
+        betas = np.zeros(1 + annos.shape[1])
+
+    def lod_germline(self, germline_anno, annos):
+        """Compute posterior LOD score using the  germline annotation."""
+        # 1. Fit weights for annotations for this likelihood?
+        self.lod_scores[:, 2] * pm + (self.lod_scores[:, 0]) * (1 - pm)
+
+    def lod_variant(self):
+        """Compute posterior LOD score of being a germline variant."""
+        raise NotImplementedError("LOD Scores under the mutect model is not ready yet!")
 
 
 class ClonalSim:

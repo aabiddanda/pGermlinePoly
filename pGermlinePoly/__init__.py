@@ -11,4 +11,4 @@ Modules exported are:
 __version__ = "0.0.1c"
 
 from .io import *  # noqa
-from .pGermlinePoly import ClonalSim, ProbGermline
+from .pGermlinePoly import ClonalSim, MutectLOD, ProbGermline
