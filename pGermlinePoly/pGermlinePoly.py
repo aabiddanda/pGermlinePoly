@@ -507,7 +507,7 @@ class ClonalSim:
         self.germline_clone_pl = germline_clone_pl
 
     def simulate_germline_somatic_muts(
-        self, mean_coverage=15.0, sd_coverage=5.0, q=30, seed=42
+        self, mean_coverage=15.0, sd_coverage=5.0, q=30, eps=1e-2, seed=42
     ):
         """Simulate the somatic mutations in the germline context."""
         assert self.n_somatic_mut >= 0
@@ -515,15 +515,16 @@ class ClonalSim:
         assert sd_coverage > 0
         assert q > 0
         assert seed > 0
+        assert eps > 0
         np.random.seed(seed)
-        somatic_tot_reads = np.zeros(self.n_somatic_mut, dtype=int)
+        somatic_tot_reads = np.round(
+            norm.rvs(loc=mean_coverage, scale=sd_coverage, size=self.n_somatic_mut)
+        ).astype(int)
+        somatic_tot_reads[somatic_tot_reads <= 0] = 0
         somatic_alt_reads = np.zeros(self.n_somatic_mut, dtype=int)
         somatic_pl = np.zeros(shape=(self.n_somatic_mut, 3))
         for i in range(self.n_somatic_mut):
-            somatic_tot_reads[i] = np.round(
-                norm.rvs(loc=mean_coverage, scale=sd_coverage)
-            ).astype(int)
-            somatic_alt_reads[i] = binom.rvs(n=somatic_tot_reads[i], p=0.0)
+            somatic_alt_reads[i] = binom.rvs(n=somatic_tot_reads[i], p=eps)
             somatic_pl[i, :] = geno_loglik(
                 somatic_alt_reads[i], somatic_tot_reads[i], q=q
             )
