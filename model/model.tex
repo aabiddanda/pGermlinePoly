@@ -17,12 +17,29 @@
 \usepackage{indentfirst}
 \usepackage{lipsum}
 
+\title{Estimating Somatic Variant Quality from Clonal Sequencing using Hierarchical Bayesian Models}
+\author[1,*]{Arjun Biddanda}
+\affil[1]{Johns Hopkins University, Department of Biology}
+\affil[*]{Contact: \href{mailto:abiddan1@jhu.edu}{abiddan1@jhu.edu}}
 
-\title{Somatic variant detection in clonal sequencing data using \texttt{pGermlinePoly}}
-\author{Arjun Biddanda}
-\date{May 2024}
+\date{\today}
 
 \begin{document}
+
+\section*{Introduction}
+
+The primary goal here is to develop a principled method to estimate the \textit{probability} that an observed clonal variant is actually somatic and not a germline variant. The core intuition used by a number of somatic variant callers is that (1) a germline variant is shared across all somatic clones and (2) is also present in a germline sample. Without loss of generality we assume that "clone" refers to sequencing data from a single colony derived from a blood progenitor lineage or in cases of other tissues, a laser-capture microdissection.
+
+
+We specifically want to model how the germline sample, alongside additional information can provide ``prior'' information on whether a variant is likely to be polymorphic in the germline (e.g. population allele frequency). The likelihood is then defined using the collected evidence for that polymorphism across **all** of the individual clone sequences. We detail a flexible model below that can incorporate an arbitrary number of variant-level annotations for assisting in the prior probability of germline polymorphism (e.g. variant-level masks, allele frequencies, region-specific mutation rate). 
+
+
+\section*{Model}
+
+
+
+
+
 
 \maketitle
 
