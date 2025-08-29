@@ -21,3 +21,5 @@ docs/_build/
 *.log
 *.out
 *.pdf
+*.bbl
+*.blg
