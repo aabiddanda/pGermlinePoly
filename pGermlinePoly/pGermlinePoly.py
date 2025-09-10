@@ -273,7 +273,7 @@ class MutectLOD:
         betas = np.zeros(1 + annos.shape[1])
 
     def lod_germline(self, germline_anno, annos):
-        """Compute posterior LOD score using the  germline annotation."""
+        """Compute posterior LOD score using the germline annotation."""
         # 1. Fit weights for annotations for this likelihood?
         self.lod_scores[:, 2] * pm + (self.lod_scores[:, 0]) * (1 - pm)
 

@@ -28,7 +28,7 @@
 
 \maketitle
 \begin{abstract}
-The detection of \textit{somatic} variants from ``clonal'' sampling of tissues is a major challenge in leveraging sequencing data to understand both tissue development and cancer progression. Detecting truly somatic variants requires disentangling sequencing error and true germline polymorphisms, often requiring high sequencing depth per-clone ($> 10x$ average depth). Additionally, there may be high variation in sequencing depths \textit{per clone}, which affects the power to detect a somatic variant, particularly at low variant allele frequencies (VAF). Furthermore, if a germline reference sample is provided but is not of high quality, there may be uncertainty  To address the challenge of somatic variant filtering and curation, we develop a hierarchical model leveraging multiple annotations from publicly available datasets to estimate the \textit{posterior probability of germline polymorphism} as a comparable statistic across multiple clonally sampled individuals for consistent filtering. We highlight how variation in depth of coverage amongst clones and sequencing errors can affect somatic variant detection power. Our method provides variant-level annotations for filtering across a wide variety of somatic sequencing contexts. 
+The detection of \textit{somatic} variants from ``clonal'' sampling of tissues is a major challenge in leveraging sequencing data to understand both tissue development and cancer progression. Detecting truly somatic variants requires disentangling sequencing error and true germline polymorphisms, often requiring high sequencing depth per-clone ($> 10x$ average depth). Additionally, there may be high variation in sequencing depths \textit{per clone}, which affects the power to detect a somatic variant, particularly at low variant allele frequencies (VAF). Furthermore, if a germline reference sample is provided but is not of high quality, there may be uncertainty  To address the challenge of somatic variant filtering and curation, we develop a hierarchical model leveraging multiple annotations from publicly available datasets to estimate the \textit{posterior probability of germline polymorphism} as a comparable statistic across multiple clonally sampled individuals for consistent filtering. We highlight how variation in depth of coverage amongst clones and sequencing errors can affect somatic variant detection power. Our method provides variant-level annotations for filtering across a wide variety of somatic sequencing contexts.
 \end{abstract}
 
 
@@ -36,7 +36,7 @@ The detection of \textit{somatic} variants from ``clonal'' sampling of tissues i
 
 Our goal here is to develop a method to estimate the \textit{probability} that an observed clonal variant is actually somatic and not a germline variant. In actuality, we will be estimating the ``complement'', the probability that the variant is actually a germline variant. The core intuition used by a number of somatic variant callers is that (1) a germline variant is shared across \textit{all} somatic clones and (2) is also present in a germline sample. Without loss of generality we assume that ``clone'' refers to sequencing data from a single colony derived from a blood progenitor lineage or in cases of other tissues, a laser-capture microdissection.
 
-We specifically want to model how the germline sample, alongside additional information can provide ``prior'' information on whether a variant is likely to be polymorphic in the germline (e.g., population allele frequency). The likelihood is then defined using the collected evidence for that polymorphism across \textit{all} of the individual clone sequences. The prior probability of germline polymorphism will be informed by specific annotations variant-level annotations (e.g., variant-level masks, allele frequencies, region-specific mutation rate). If the hyperparameters dictating the prior distribution are estimated using Empirical Bayes, we can then robustly arrive at a posterior probability of germline polymorphism estimate. 
+We specifically want to model how the germline sample, alongside additional information can provide ``prior'' information on whether a variant is likely to be polymorphic in the germline (e.g., population allele frequency). The likelihood is then defined using the collected evidence for that polymorphism across \textit{all} of the individual clone sequences. The prior probability of germline polymorphism will be informed by specific annotations variant-level annotations (e.g., variant-level masks, allele frequencies, region-specific mutation rate). If the hyperparameters dictating the prior distribution are estimated using Empirical Bayes, we can then robustly arrive at a posterior probability of germline polymorphism estimate.
 
 
 \section*{Model}
@@ -49,7 +49,7 @@ P(GL_k | \mathbf{G_k}) &= \prod_j^J GL_{jk}(g_{jk}),
 \end{aligned}
 \end{equation}
 
-However, in reality the genotypes of every single clonal sample are unknown, so we can shift the likelihood to instead consider the \textit{probability} that the clonal genotype is a particular value: 
+However, in reality the genotypes of every single clonal sample are unknown, so we can shift the likelihood to instead consider the \textit{probability} that the clonal genotype is a particular value:
 
 \begin{equation}
 \begin{aligned}
@@ -59,7 +59,7 @@ P(GL_k | \theta_k) &= \prod_j^J  \sum_{g\in\{0,1,2\}}GL_{jk}(g) P(G_{jk} = g | \
 
 , where $P(G_{jk} = g)$ is the prior probability of a specific \textit{clonal} genotype at the $k^{th}$ site in the $j^{th}$ sample. In the case of a putative \textit{germline polymorphism}, we have a restricted distribution of $P(G_{k} == 1)$ across \textit{all} of the $J$ samples.
 
-We define the latent variable $Z_k$ as the probability of the $k^{th}$ variant being germline polymorphic. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g. germline sample genotype relative likelihood, gnomAD allele frequency, masking, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations: 
+We define the latent variable $Z_k$ as the probability of the $k^{th}$ variant being germline polymorphic. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g. germline sample genotype relative likelihood, gnomAD allele frequency, masking, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations:
 
 \begin{equation}
 \begin{aligned}
@@ -73,12 +73,12 @@ Using this kind of prior, we can model each sites genotype likelihood as coming 
 $$P(GL | \theta, \Lambda,\alpha_0) = \prod_k^K \pi_k P(GL_k| Z_k = 1) + (1 - \pi_k)P(GL_k | Z_k = 0)$$
 , where each of the $K$ sites are treated as independent realizations of this data generating process. Note that in this case, we are kind of abusing notation and $f$ is just a function specifying that we are taking specific genotype-likelihood entries (corresponding to a presumed genotype).
 
-For better specificity, we detail the terms $P(G_j | Z_k)$ below: 
+For better specificity, we detail the terms $P(G_j | Z_k)$ below:
 
 \begin{equation}
 \begin{aligned}
 	P(GL_k | Z_k = 1) &= \prod^J_j \sum_{g\in \{0,1,2\}}GL_k(g)P(G_j = g | Z_k)\\
-	P(G_j = g | Z_k = 1) &= 
+	P(G_j = g | Z_k = 1) &=
 	\begin{cases}
 		\epsilon &, g \in \{0, 2\}\\
 		1 - 2\epsilon &, g = 1\\
@@ -87,13 +87,13 @@ For better specificity, we detail the terms $P(G_j | Z_k)$ below:
 \end{aligned}
 \end{equation}
 
-, where $\alpha_0 < 1$ in the alternative case (to de-emphasize taking intermediate values too often). Writing out the full likelihood across all $K$ sites, we obtain: 
+, where $\alpha_0 < 1$ in the alternative case (to de-emphasize taking intermediate values too often). Writing out the full likelihood across all $K$ sites, we obtain:
 
 \begin{equation}
 P(GL | \Lambda, \alpha_0, \epsilon) = \prod^K \pi_k \left(\prod^J \sum_{g \in \{0,1,2\}} GL_k(g)P(G_j = g | Z_k = 1, \epsilon, \alpha_0) \right) + (1 - \pi_k)\left(\prod^J \sum_{g \in \{0,1,2\}} GL_k(g)P(G_j = g | Z_k = 0, \epsilon, \alpha_0) \right)
 \end{equation}
 
-Each iteration of this likelihood will take $\mathcal{O}(KJL)$ to compute. We describe some of the pre-computation and tools used for parameter estimation in a subsequent section. With parameters $\hat{\Lambda}, \hat{\alpha_0}, \epsilon$ we can estimate the posterior probability of $Z_k = 1$ as: 
+Each iteration of this likelihood will take $\mathcal{O}(KJL)$ to compute. We describe some of the pre-computation and tools used for parameter estimation in a subsequent section. With parameters $\hat{\Lambda}, \hat{\alpha_0}, \epsilon$ we can estimate the posterior probability of $Z_k = 1$ as:
 
 \begin{equation}
 \begin{aligned}
@@ -102,7 +102,7 @@ P(Z_k = 1 | GL_k, \theta_k, \Lambda) &= \frac{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \a
 \end{aligned}
 \end{equation}
 
-% This calculated posterior probability is used as a quantitative filter for downstream VCF files. Our core argument here is that this effectively takes into account latent annotations in a way that their overall contribution to a variant being truly somatic can be estimated across the genome. 
+% This calculated posterior probability is used as a quantitative filter for downstream VCF files. Our core argument here is that this effectively takes into account latent annotations in a way that their overall contribution to a variant being truly somatic can be estimated across the genome.
 
 \begin{figure}[H]
 \begin{center}
@@ -113,13 +113,22 @@ P(Z_k = 1 | GL_k, \theta_k, \Lambda) &= \frac{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \a
 
 \subsection*{Computational Methods}
 
-\noindent Since the full likelihood takes $mathcal{O}(KJL)$ to compute, we focus here on strategies for limiting this computation as the number of variants $K$ grows large.
+\noindent Since the full likelihood takes $mathcal{O}(KJL)$ to compute, we focus here on strategies for limiting this computation as the number of variants $K$ grows large. In realistic datasets from blood clonal sequencing available today $K \sim 10^7$ within a GATK VCF callset.
+
+\begin{enumerate}
+\item \textbf{Precomputation + Thinning}
 
 
-\section*{Model Validation and Estimation}
 
-For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the error in two parameters 
+\item \textbf{Initialization Scan}
 
+
+\end{enumerate}
+
+
+\section*{Model Validation and Comparisons}
+
+For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the error in two parameters
 
 
 
