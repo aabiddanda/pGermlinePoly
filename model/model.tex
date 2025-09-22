@@ -28,7 +28,7 @@
 
 \maketitle
 \begin{abstract}
-The detection of \textit{somatic} variants from ``clonal'' sampling of tissues is a major challenge in leveraging sequencing data to understand both tissue development and cancer progression. Detecting truly somatic variants requires disentangling sequencing error and true germline polymorphisms, often requiring high sequencing depth per-clone ($> 10x$ average depth). Additionally, there may be high variation in sequencing depths \textit{per clone}, which affects the power to detect a somatic variant, particularly at low variant allele frequencies (VAF). Furthermore, if a germline reference sample is provided but is not of high quality, there may be uncertainty  To address the challenge of somatic variant filtering and curation, we develop a hierarchical model leveraging multiple annotations from publicly available datasets to estimate the \textit{posterior probability of germline polymorphism} as a comparable statistic across multiple clonally sampled individuals for consistent filtering. We highlight how variation in depth of coverage amongst clones and sequencing errors can affect somatic variant detection power. Our method provides variant-level annotations for filtering across a wide variety of somatic sequencing contexts.
+The detection of \textit{somatic} variants from ``clonal'' sampling of tissues is a major challenge in leveraging sequencing data to understand both tissue development and cancer progression. Detecting truly somatic variants requires disentangling sequencing error and true germline polymorphism, often requiring high sequencing depth per-clone ($> 10x$ average depth). Additionally, there may be high variation in sequencing depths \textit{per clone}, which affects the power to detect a somatic variant, particularly at low variant allele frequencies (VAF). Furthermore, if a germline reference sample is provided but is not of high quality, there may be uncertainty even for high-VAF somatic variants. To address the challenge of somatic variant filtering and curation, we develop a hierarchical model leveraging multiple annotations from publicly available datasets to estimate the \textit{posterior probability of germline polymorphism} as a comparable statistic across multiple clonally sampled individuals for consistent filtering. We highlight how variation in depth of coverage amongst clones and sequencing errors can affect somatic variant detection power. Our method provides variant-level annotations for filtering across variety of somatic sequencing contexts.
 \end{abstract}
 
 
@@ -36,8 +36,7 @@ The detection of \textit{somatic} variants from ``clonal'' sampling of tissues i
 
 Our goal here is to develop a method to estimate the \textit{probability} that an observed clonal variant is actually somatic and not a germline variant. In actuality, we will be estimating the ``complement'', the probability that the variant is actually a germline variant. The core intuition used by a number of somatic variant callers is that (1) a germline variant is shared across \textit{all} somatic clones and (2) is also present in a germline sample. Without loss of generality we assume that ``clone'' refers to sequencing data from a single colony derived from a blood progenitor lineage or in cases of other tissues, a laser-capture microdissection.
 
-We specifically want to model how the germline sample, alongside additional information can provide ``prior'' information on whether a variant is likely to be polymorphic in the germline (e.g., population allele frequency). The likelihood is then defined using the collected evidence for that polymorphism across \textit{all} of the individual clone sequences. The prior probability of germline polymorphism will be informed by specific annotations variant-level annotations (e.g., variant-level masks, allele frequencies, region-specific mutation rate). If the hyperparameters dictating the prior distribution are estimated using Empirical Bayes, we can then robustly arrive at a posterior probability of germline polymorphism estimate.
-
+We specifically want to model how the germline sample, alongside additional information can provide ``prior'' information on whether a variant is likely to be polymorphic in the germline (e.g., population allele frequency). The likelihood is then defined using the collected evidence for that polymorphism across \textit{all} of the individual clone sequences. The prior probability of germline polymorphism will be informed by specific variant-level annotations (e.g., variant-level masks, allele frequencies, region-specific mutation rate). If the hyperparameters dictating the prior distribution are estimated using Empirical Bayes, we can then robustly arrive at a posterior probability of germline polymorphism estimate per putative somatic variant.
 
 \section*{Model}
 
@@ -59,7 +58,7 @@ P(GL_k | \theta_k) &= \prod_j^J  \sum_{g\in\{0,1,2\}}GL_{jk}(g) P(G_{jk} = g | \
 
 , where $P(G_{jk} = g)$ is the prior probability of a specific \textit{clonal} genotype at the $k^{th}$ site in the $j^{th}$ sample. In the case of a putative \textit{germline polymorphism}, we have a restricted distribution of $P(G_{k} == 1)$ across \textit{all} of the $J$ samples.
 
-We define the latent variable $Z_k$ as the probability of the $k^{th}$ variant being germline polymorphic. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g. germline sample genotype relative likelihood, gnomAD allele frequency, masking, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations:
+We define the latent variable $Z_k$ as the probability of the $k^{th}$ variant being \textit{germline polymorphic}. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g., germline sample genotype likelihood, gnomAD allele frequency, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations:
 
 \begin{equation}
 \begin{aligned}
@@ -108,29 +107,53 @@ P(Z_k = 1 | GL_k, \theta_k, \Lambda) &= \frac{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \a
 \begin{center}
 \includegraphics{figs/pGermlinePoly.model.png}
 \end{center}
-\caption{Graphical Model describing the likelihood model. $K$ dictates the number of }
+\caption{Graphical Model describing the likelihood model. $K$ dictates the number of sites present in gVCF format.}
 \end{figure}
 
 \subsection*{Computational Methods}
 
-\noindent Since the full likelihood takes $mathcal{O}(KJL)$ to compute, we focus here on strategies for limiting this computation as the number of variants $K$ grows large. In realistic datasets from blood clonal sequencing available today $K \sim 10^7$ within a GATK VCF callset.
+\noindent Since the full likelihood takes $\mathcal{O}(KJL)$ to compute, we focus here on strategies for limiting this computation as the number of variants $K$ grows large. In realistic datasets from blood clonal sequencing available today $K \sim 10^7$ within a GATK VCF callset.
 
 \begin{enumerate}
 \item \textbf{Precomputation + Thinning}
 
-
+To avoid using the full dataset for hyperparameter estimation via Empirical Bayes we restrict our inference to only considering some proportion $\gamma$ of the sites in a joint-called VCF file with genotype likelihoods. Thinning to a restricted proportion of sites spread throughout the genome helps substantially for hyperparameter training. 
 
 \item \textbf{Initialization Scan}
 
+One of the more critical parameters to be estimated is $\alpha_0$, or the concentration parameter of the Beta-Binomial distribution. The core idea here is that for true somatic variants, the alleles carried \textit{within} the pool of clones will be overdispersed relative to binomial expectations (since there is effectively a mixture of clones carrying the somatic variant).
+
+We can use this idea in the genotype-likelihood space to estimate the parameters of a beta-binomial distribution \textit{per-site} ($\tilde{\alpha}^{(k)}_0$) to prioritize estimating the $\alpha_0$ hyperparameter genome-wide from the over-dispersed ones. The per-site likelihood is therefore:
+
+\begin{equation}
+\begin{aligned}
+	l(\alpha^{(k)}_0) &= \log P(GL_k | \alpha^{(k)}_0)\\
+	&= \log \left(\prod_j^J \sum_{g\in{0,1,2}} GL_{jk}(g)P(G_{jk} = g | \alpha^{k}_0)\right) \\
+	&= \sum_j^J \log\left(\sum_{g\in{0,1,2}} GL_{jk}(g) \binom{n}{g} \frac{B(g + \alpha^{(k)}_0, 2 - g + \alpha^{(k)}_0)}{B(\alpha^{(k)}_0, \alpha^{(k)}_0)}\right)
+\end{aligned}
+\end{equation}
+
+Performing this as a one-time scan for estimating per-variant overdispersion parameters, we can prioritize dispersion estimates that are a bit lower than 1 and estimate $\hat{\alpha}_0$ in this way. We also first  
 
 \end{enumerate}
 
 
-\section*{Model Validation and Comparisons}
+\section*{Model Validation and Performance}
 
-For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the error in two parameters
+For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the contribution of two annotations $\lambda_1, \lambda_2$ to the posterior probability of being a germline polymorphic site. We artificially simulated $K' = 100$ sites as true somatic variants in this setting. 
 
 
+
+\lipsum[30]
+
+
+
+\section*{Limitations / Model Improvement}
+
+\begin{itemize}
+	\item Model fitting takes substantially more time than it does for simpler linear filters.
+	\item Genotype-likelihood models are slightly more opaque.
+\end{itemize}
 
 \bibliographystyle{unsrt} % We choose the "plain" reference style
 \bibliography{refs} % Entries are in the refs.bib file
