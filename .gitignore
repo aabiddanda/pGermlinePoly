@@ -23,3 +23,5 @@ docs/_build/
 *.pdf
 *.bbl
 *.blg
+*.dvi
+*.xdv

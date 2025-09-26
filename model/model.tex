@@ -34,7 +34,7 @@ The detection of \textit{somatic} variants from ``clonal'' sampling of tissues i
 
 \section*{Problem Motivation}
 
-Our goal here is to develop a method to estimate the \textit{probability} that an observed clonal variant is actually somatic and not a germline variant. In actuality, we will be estimating the ``complement'', the probability that the variant is actually a germline variant. The core intuition used by a number of somatic variant callers is that (1) a germline variant is shared across \textit{all} somatic clones and (2) is also present in a germline sample. Without loss of generality we assume that ``clone'' refers to sequencing data from a single colony derived from a blood progenitor lineage or in cases of other tissues, a laser-capture microdissection.
+Our goal here is to develop a method to estimate the \textit{probability} that an observed clonal variant is actually somatic and not a germline variant. In actuality, we will be estimating the ``complement'', the probability that the variant is actually a germline variant. The core intuition used by a number of somatic variant callers is that (1) a germline variant is shared across \textit{all} somatic clones and (2) is also present in a germline sample \citep{Coorens2021-xy,Coorens2024-be,Spencer-Chapman2025-pj}. Without loss of generality we assume that ``clone'' refers to sequencing data from a single colony derived from a blood progenitor lineage or in cases of other tissues, a laser-capture microdissection.
 
 We specifically want to model how the germline sample, alongside additional information can provide ``prior'' information on whether a variant is likely to be polymorphic in the germline (e.g., population allele frequency). The likelihood is then defined using the collected evidence for that polymorphism across \textit{all} of the individual clone sequences. The prior probability of germline polymorphism will be informed by specific variant-level annotations (e.g., variant-level masks, allele frequencies, region-specific mutation rate). If the hyperparameters dictating the prior distribution are estimated using Empirical Bayes, we can then robustly arrive at a posterior probability of germline polymorphism estimate per putative somatic variant.
 
@@ -58,7 +58,7 @@ P(GL_k | \theta_k) &= \prod_j^J  \sum_{g\in\{0,1,2\}}GL_{jk}(g) P(G_{jk} = g | \
 
 , where $P(G_{jk} = g)$ is the prior probability of a specific \textit{clonal} genotype at the $k^{th}$ site in the $j^{th}$ sample. In the case of a putative \textit{germline polymorphism}, we have a restricted distribution of $P(G_{k} == 1)$ across \textit{all} of the $J$ samples.
 
-We define the latent variable $Z_k$ as the probability of the $k^{th}$ variant being \textit{germline polymorphic}. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g., germline sample genotype likelihood, gnomAD allele frequency, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations:
+We define the latent variable $Z_k$ as an indicator of the $k^{th}$ variant being \textit{germline polymorphic}. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g., germline sample genotype likelihood, gnomAD allele frequency, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations:
 
 \begin{equation}
 \begin{aligned}
@@ -72,7 +72,7 @@ Using this kind of prior, we can model each sites genotype likelihood as coming 
 $$P(GL | \theta, \Lambda,\alpha_0) = \prod_k^K \pi_k P(GL_k| Z_k = 1) + (1 - \pi_k)P(GL_k | Z_k = 0)$$
 , where each of the $K$ sites are treated as independent realizations of this data generating process. Note that in this case, we are kind of abusing notation and $f$ is just a function specifying that we are taking specific genotype-likelihood entries (corresponding to a presumed genotype).
 
-For better specificity, we detail the terms $P(G_j | Z_k)$ below:
+For better specificity, we detail the terms $P(G_j | Z_k)$\footnote{NOTE: we may also adopt a standard binomial in the case of a true germline heterozygote (and put in the beta-binomial in an alternative parameterization due to estimated VAF)} below:
 
 \begin{equation}
 \begin{aligned}
@@ -140,7 +140,7 @@ Performing this as a one-time scan for estimating per-variant overdispersion par
 
 \section*{Model Validation and Performance}
 
-For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the contribution of two annotations $\lambda_1, \lambda_2$ to the posterior probability of being a germline polymorphic site. We artificially simulated $K' = 100$ sites as true somatic variants in this setting. 
+For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the contribution of two annotations $\lambda_1, \lambda_2$ to the posterior probability of being a germline polymorphic site. We artificially simulated $K' = 100$ sites as true somatic variants in this setting. \\
 
 
 \textbf{TODO}
@@ -151,6 +151,7 @@ For initial validation, we simulated read-level data under the model and for $K=
 	\item Model fitting takes more time than it does for simpler linear filters.
 	\item Genotype-likelihood models are slightly more opaque
 	\item The model may be dependent on relevant annotations available, but many of these are known in the field. 
+	\item Current simulations are not from a \textit{true} somatic mutation simulator \citep{Srivatsa2023-mt}
 \end{itemize}
 
 \bibliographystyle{unsrt} % We choose the "plain" reference style
