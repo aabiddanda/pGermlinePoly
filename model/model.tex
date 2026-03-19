@@ -117,7 +117,7 @@ P(Z_k = 1 | GL_k, \theta_k, \Lambda) &= \frac{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \a
 \begin{enumerate}
 \item \textbf{Precomputation + Thinning}
 
-To avoid using the full dataset for hyperparameter estimation via Empirical Bayes we restrict our inference to only considering some proportion $\gamma$ of the sites in a joint-called VCF file with genotype likelihoods. Thinning to a restricted proportion of sites spread throughout the genome helps substantially for hyperparameter training. 
+To avoid using the full dataset for hyperparameter estimation via Empirical Bayes we restrict our inference to only considering some proportion $\gamma$ of the sites in a joint-called VCF file with genotype likelihoods. Thinning to a restricted proportion of sites spread throughout the genome helps substantially for hyperparameter training.
 
 \item \textbf{Initialization Scan}
 
@@ -133,7 +133,7 @@ We can use this idea in the genotype-likelihood space to estimate the parameters
 \end{aligned}
 \end{equation}
 
-Performing this as a one-time scan for estimating per-variant overdispersion parameters, we can prioritize dispersion estimates that are a bit lower than 1 and estimate $\hat{\alpha}_0$ in this way. We also first  
+Performing this as a one-time scan for estimating per-variant overdispersion parameters, we can prioritize dispersion estimates that are a bit lower than 1 and estimate $\hat{\alpha}_0$ in this way. We also first
 
 \end{enumerate}
 
@@ -150,7 +150,7 @@ For initial validation, we simulated read-level data under the model and for $K=
 \begin{itemize}
 	\item Model fitting takes more time than it does for simpler linear filters.
 	\item Genotype-likelihood models are slightly more opaque
-	\item The model may be dependent on relevant annotations available, but many of these are known in the field. 
+	\item The model may be dependent on relevant annotations available, but many of these are known in the field.
 	\item Current simulations are not from a \textit{true} somatic mutation simulator \citep{Srivatsa2023-mt}
 \end{itemize}
 

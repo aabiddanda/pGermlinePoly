@@ -1,4 +1,5 @@
 """Inference and simulation of germline polymorphism in clonal sequencing data."""
+
 import logging
 import warnings
 
@@ -10,15 +11,13 @@ from poly_utils import (
     geno_loglik,
     incomplete_loglik,
     log_prior,
-    logaddexp,
-    logsumexp,
     mle_est_loglik,
     posterior_poly,
     single_var_logll,
     var_loglik,
 )
-from scipy.optimize import minimize, minimize_scalar
-from scipy.stats import beta, binom, expon, norm, poisson, rv_histogram, uniform
+from scipy.optimize import minimize
+from scipy.stats import beta, binom, norm, poisson, uniform
 
 
 class ProbGermline:

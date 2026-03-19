@@ -1,11 +1,9 @@
 """CLI for simulation of neutral clonal sequencing data."""
+
 import logging
-import sys
 
 import click
 import yaml
-from cyvcf2 import VCF
-from tqdm import tqdm
 
 from pGermlinePoly import ClonalSim
 

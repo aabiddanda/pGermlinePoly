@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 from cyvcf2 import VCF
-from poly_utils import logsumexp
 
 from pGermlinePoly import ClonalSim, ProbGermline
 from pGermlinePoly.io import (

@@ -1,6 +1,6 @@
 """CLI for pGermlinePoly Estimation in VCF."""
+
 import logging
-import sys
 
 import click
 from cyvcf2 import VCF, Writer

@@ -1,6 +1,3 @@
-import numpy as np
-
-
 def generate_allele_depth():
     """Generate allele depth argument."""
     pass
