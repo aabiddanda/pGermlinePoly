@@ -40,25 +40,33 @@ We specifically want to model how the germline sample, alongside additional info
 
 \section*{Model}
 
-We start from a model where the output consists of diploid genotype likelihoods from each of the $J$ clonal samples at the $k^{th}$ site. Briefly, $GL_{jk} \propto P(R_{jk} | G_{jk})$, where $R_{jk}$ is the number of reads containing the alternative allele in the $j^{th}$ sample at the $k^{th}$ site, and $G_{jk}$ is the underlying genotype (0,1, or 2). Therefore, across all of the clones, we can calculate the total likelihood assuming the set of clonal genotypes is known.
+We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote or polymorphism. Considering the likelihood across 
 
 \begin{equation}
 \begin{aligned}
-P(GL_k | \mathbf{G_k}) &= \prod_j^J GL_{jk}(g_{jk}),
+P(\mathbf{A}_k, \mathbf{R_k} | z_k=\texttt{het}) &= \prod_j^J  \texttt{Bin}\left(a_{jk}, a_{jk}+r_{jk}, \frac{1}{2}\right)
 \end{aligned}
 \end{equation}
 
-However, in reality the genotypes of every single clonal sample are unknown, so we can shift the likelihood to instead consider the \textit{probability} that the clonal genotype is a particular value:
 
 \begin{equation}
 \begin{aligned}
-P(GL_k | \theta_k) &= \prod_j^J  \sum_{g\in\{0,1,2\}}GL_{jk}(g) P(G_{jk} = g | \theta_k),
+P(\mathbf{A}_k, \mathbf{R_k} | z_k=\texttt{somatic}) &= \prod_j^J  \alpha \texttt{Bin} \left(a_{jk}, a_{jk}+r_{jk}, \frac{1}{2}\right) + (1 - \alpha)\texttt{Bin}(a_{jk}, a_{jk}+r_{jk}, \epsilon)
 \end{aligned}
 \end{equation}
 
-, where $P(G_{jk} = g)$ is the prior probability of a specific \textit{clonal} genotype at the $k^{th}$ site in the $j^{th}$ sample. In the case of a putative \textit{germline polymorphism}, we have a restricted distribution of $P(G_{k} == 1)$ across \textit{all} of the $J$ samples.
 
-We define the latent variable $Z_k$ as an indicator of the $k^{th}$ variant being \textit{germline polymorphic}. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g., germline sample genotype likelihood, gnomAD allele frequency, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations:
+Combining this likelihood definition with prior probabilities ($P(z_k = z)$) leads to a posterior probability for $P(z_k = \texttt{het} | \mathbf{A}_k, \mathbf{R_k})$:
+
+
+\begin{equation}
+\begin{aligned}
+P(z_k=\texttt{het} | \mathbf{A}_k, \mathbf{R_k}) &= \frac{ P(\mathbf{A}_k, \mathbf{R_k} | z_k=\texttt{het}) \times P(z_k = \texttt{het}) }{\sum_{z \in \{\texttt{het}, \texttt{somatic}\}} P(\mathbf{A}_k, \mathbf{R_k} | z_k=z) \times P(z_k = z)   }
+\end{aligned}
+\end{equation}
+
+
+We define the latent variable $Z_k$ as an indicator that the $k^{th}$ variant is \textit{germline polymorphic}. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g., germline sample genotype likelihood, gnomAD allele frequency, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations:
 
 \begin{equation}
 \begin{aligned}
@@ -69,27 +77,13 @@ We define the latent variable $Z_k$ as an indicator of the $k^{th}$ variant bein
 
 Using this kind of prior, we can model each sites genotype likelihood as coming from a mixture of the two latent distributions:
 
-$$P(GL | \theta, \Lambda,\alpha_0) = \prod_k^K \pi_k P(GL_k| Z_k = 1) + (1 - \pi_k)P(GL_k | Z_k = 0)$$
-, where each of the $K$ sites are treated as independent realizations of this data generating process. Note that in this case, we are kind of abusing notation and $f$ is just a function specifying that we are taking specific genotype-likelihood entries (corresponding to a presumed genotype).
+$$P(GL | \theta, \Lambda) = \prod_k^K \pi_k P(GL_k| Z_k = 1) + (1 - \pi_k)P(GL_k | Z_k = 0)$$
+, where each of the $K$ sites are treated as independent realizations of this data generating process. If we empirically estimate $\hat{\alpha}_k$ as the MLE estimate of the VAF (using no prior information), then the total likelihood for the data is:
 
-For better specificity, we detail the terms $P(G_j | Z_k)$\footnote{NOTE: we may also adopt a standard binomial in the case of a true germline heterozygote (and put in the beta-binomial in an alternative parameterization due to estimated VAF)} below:
 
-\begin{equation}
-\begin{aligned}
-	P(GL_k | Z_k = 1) &= \prod^J_j \sum_{g\in \{0,1,2\}}GL_k(g)P(G_j = g | Z_k)\\
-	P(G_j = g | Z_k = 1) &=
-	\begin{cases}
-		\epsilon &, g \in \{0, 2\}\\
-		1 - 2\epsilon &, g = 1\\
-	\end{cases}\\
-	P(G_j = g | Z_k = 0) &= Beta\-Binomial(2, \alpha_0, \alpha_0)
-\end{aligned}
-\end{equation}
-
-, where $\alpha_0 < 1$ in the alternative case (to de-emphasize taking intermediate values too often). Writing out the full likelihood across all $K$ sites, we obtain:
 
 \begin{equation}
-P(GL | \Lambda, \alpha_0, \epsilon) = \prod^K \pi_k \left(\prod^J \sum_{g \in \{0,1,2\}} GL_k(g)P(G_j = g | Z_k = 1, \epsilon, \alpha_0) \right) + (1 - \pi_k)\left(\prod^J \sum_{g \in \{0,1,2\}} GL_k(g)P(G_j = g | Z_k = 0, \epsilon, \alpha_0) \right)
+P(GL | \Lambda, \hat{\alpha}, \epsilon) = \prod^K \pi_k \left(\prod^J \sum_{g \in \{0,1,2\}} P(GL_k | P(G_j = g | Z_k = 1, \epsilon, \alpha_0) \right) + (1 - \pi_k)\left(\prod^J \sum_{g \in \{0,1,2\}} GL_k(g)P(G_j = g | Z_k = 0, \epsilon, \alpha_0) \right)
 \end{equation}
 
 Each iteration of this likelihood will take $\mathcal{O}(KJL)$ to compute. We describe some of the pre-computation and tools used for parameter estimation in a subsequent section. With parameters $\hat{\Lambda}, \hat{\alpha_0}, \epsilon$ we can estimate the posterior probability of $Z_k = 1$ as:
@@ -100,8 +94,6 @@ P(Z_k = 1 | GL_k, \theta_k, \Lambda) &= \frac{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \a
 &=  \frac{\pi_k P(GL_k|Z_k=1, \alpha_0)}{\pi_k P(GL_k|Z_k=1, \alpha_0, \epsilon) + (1 - \pi_k)P(GL_k|Z_k=0, \alpha_0,\epsilon)}
 \end{aligned}
 \end{equation}
-
-% This calculated posterior probability is used as a quantitative filter for downstream VCF files. Our core argument here is that this effectively takes into account latent annotations in a way that their overall contribution to a variant being truly somatic can be estimated across the genome.
 
 \begin{figure}[H]
 \begin{center}
@@ -165,7 +157,6 @@ R | N \sim BetaBinom\left(\hat{p}\frac{1 - \rho}{\rho}, (1 - \hat{p})\frac{1-\rh
 $$
 
 , where $\hat{p}$ is the MLE estimate for the VAF. In early publications (CITE), the proposal was simply to exclude any variant with $\hat{\rho} > 0.1$. This approach works quite well in simulations with fairly even coverage across samples (at the proposed variant in question). In \texttt{pGermlinePoly} we provide this ``pooled overdispersion'' estimator as an annotation in order to
-
 
 
 \bibliographystyle{unsrt} % We choose the "plain" reference style

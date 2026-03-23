@@ -11,8 +11,6 @@ from scipy.optimize import minimize_scalar
 cdef extern from "math.h":
     float INFINITY
 
-
-
 cpdef double logaddexp(double a, double b):
     """Log-add exponential for two values."""
     cdef double m;

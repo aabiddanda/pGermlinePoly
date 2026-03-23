@@ -21,7 +21,7 @@ from scipy.stats import beta, binom, betabinom, norm, poisson, uniform
 
 
 class ProbGermline:
-    """Class to estimate the posterior probability of germline polymorphism from somatic data."""
+    """Class to estimate the posterior probability of germline polymorphism from clonal somatic data."""
 
     def __init__(self, X, Theta):
         """Initialize the class.
