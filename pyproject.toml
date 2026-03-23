@@ -16,7 +16,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pGermlinePoly"
 description = "\"Statistical method to estimate the posterior probability of germline vs. somatic mutations in clone-sequencing data.\""
-keywords = [ "somatic", "mutation", "cancer"]
+keywords = ["somatic", "mutation", "cancer"]
 classifiers = ["Development Status :: 3 - Alpha", "Intended Audience :: Science/Research", "Programming Language :: Python :: 3"]
 requires-python = ">= 3.12"
 dependencies = [ "numpy", "scipy", "msprime", "Cython", "Click", "cyvcf2", "cerberus"]
@@ -28,7 +28,7 @@ authors = [{name = "Arjun Biddanda", email = "aabiddanda@gmail.com"}]
 Homepage = "https://github.com/aabiddanda/pGermlinePoly"
 
 [project.optional-dependencies]
-tests = [ "pytest", "pytest-cov", "hypothesis", "flake8", "sphinx"]
+tests = [ "pytest", "pytest-cov", "hypothesis", "pytest-xdist"]
 
 [project.scripts]
 pGermlinePoly = "pGermlinePoly.cli:main"
