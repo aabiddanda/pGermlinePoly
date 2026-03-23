@@ -17,7 +17,7 @@ from poly_utils import (
     var_loglik,
 )
 from scipy.optimize import minimize
-from scipy.stats import beta, binom, norm, poisson, uniform
+from scipy.stats import beta, binom, betabinom, norm, poisson, uniform
 
 
 class ProbGermline:
@@ -279,6 +279,41 @@ class MutectLOD:
     def lod_variant(self):
         """Compute posterior LOD score of being a germline variant."""
         raise NotImplementedError("LOD Scores under the mutect model is not ready yet!")
+
+
+class BetaOverdispersion:
+    """
+    Implementation of Beta-Binomial overdispersion test.
+    """
+
+    def __init__(self, X):
+        """
+        Arguments:
+            - X (`np.array`): a M x K x 2 matrix of read counts
+        """
+        self.X = X
+
+    def estimate_rhos(self):
+        """Estimate the overdispersion for the Beta-Binomial model."""
+        m = self.X.shape[0]
+        rhos = np.zeros(m)
+        for i in range(m):
+            p_hat = self.X[i, :, 1].sum() / self.X[i, :, :].sum()
+            alt_reads = self.X[i, :, 1].sum()
+            ref_reads = self.X[i, :, 0].sum()
+            opt_rho = minimize_scalar(
+                lambda x: (
+                    -betabinom.logpmf(
+                        alt_reads,
+                        alt_reads + ref_reads,
+                        a=phat * (1 - x) / x,
+                        b=(1 - phat) * (1 - x) / x,
+                    ).sum()
+                ),
+                bounds=(1e-6, 1 - 1e-6),
+            ).x
+            rhos[i] = opt_rho
+        return rhos
 
 
 class ClonalSim:

@@ -143,7 +143,6 @@ Performing this as a one-time scan for estimating per-variant overdispersion par
 For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the contribution of two annotations $\lambda_1, \lambda_2$ to the posterior probability of being a germline polymorphic site. We artificially simulated $K' = 100$ sites as true somatic variants in this setting. \\
 
 
-\textbf{TODO}
 
 \section*{Limitations / Model Improvement}
 
@@ -153,6 +152,21 @@ For initial validation, we simulated read-level data under the model and for $K=
 	\item The model may be dependent on relevant annotations available, but many of these are known in the field.
 	\item Current simulations are not from a \textit{true} somatic mutation simulator \citep{Srivatsa2023-mt}
 \end{itemize}
+
+
+\section*{Previous Models}
+
+\subsection*{Beta-Binomial Overdispersion Model}
+
+One of the first models (CITE) uses the observation that for truly somatic variants, only a fraction of sampled clonal lineages may carry it, making the \textit{pooled} alternative read count ($R$) across all samples \textit{overdispersed}. One way to capture this by estimating the overdispersion ($\hat{\rho}$) of a beta-binomial distribution accounting for the reads:
+
+$$
+R | N \sim BetaBinom\left(\hat{p}\frac{1 - \rho}{\rho}, (1 - \hat{p})\frac{1-\rho}{\rho}\right)
+$$
+
+, where $\hat{p}$ is the MLE estimate for the VAF. In early publications (CITE), the proposal was simply to exclude any variant with $\hat{\rho} > 0.1$. This approach works quite well in simulations with fairly even coverage across samples (at the proposed variant in question). In \texttt{pGermlinePoly} we provide this ``pooled overdispersion'' estimator as an annotation in order to
+
+
 
 \bibliographystyle{unsrt} % We choose the "plain" reference style
 \bibliography{refs} % Entries are in the refs.bib file
