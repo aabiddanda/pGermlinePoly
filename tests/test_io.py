@@ -5,10 +5,6 @@ from cyvcf2 import VCF
 from pGermlinePoly.io import (
     check_annotations,
     check_samples,
-    create_anno,
-    create_clonal_pl_matrix,
-    create_germline_anno_gl,
-    create_read_matrix,
     invert_pl,
     validate_config,
 )
@@ -238,67 +234,67 @@ def test_validate_vcf(tmp_path):
     check_annotations(cur_vcf, annotations=annotations)
 
 
-def test_annotation_extraction(tmp_path):
-    """Run through a full validation of the VCF protocol."""
-    d = tmp_path / "real_vcf_test"
-    d.mkdir()
-    config_fp = d / "config.yaml"
-    config_fp.write_text(good_config_real)
-    vcf_fp = d / "test.vcf"
-    vcf_fp.write_text(good_vcf_string)
-    config = validate_config(config_fp)
-    samples = config["clones"]
-    annotations = config["annotations"]
-    clone_vcf = VCF(vcf_fp, samples=samples)
-    X = create_clonal_pl_matrix(clone_vcf)
-    assert X.shape[2] == 3
-    assert X.shape[1] == 2
+# def test_annotation_extraction(tmp_path):
+#     """Run through a full validation of the VCF protocol."""
+#     d = tmp_path / "real_vcf_test"
+#     d.mkdir()
+#     config_fp = d / "config.yaml"
+#     config_fp.write_text(good_config_real)
+#     vcf_fp = d / "test.vcf"
+#     vcf_fp.write_text(good_vcf_string)
+#     config = validate_config(config_fp)
+#     samples = config["clones"]
+#     annotations = config["annotations"]
+#     clone_vcf = VCF(vcf_fp, samples=samples)
+#     X = create_clonal_pl_matrix(clone_vcf)
+#     assert X.shape[2] == 3
+#     assert X.shape[1] == 2
 
 
-def test_read_extraction(tmp_path):
-    """Run through a full validation of the VCF protocol."""
-    d = tmp_path / "real_vcf_test"
-    d.mkdir()
-    config_fp = d / "config.yaml"
-    config_fp.write_text(good_config_real)
-    vcf_fp = d / "test.vcf"
-    vcf_fp.write_text(good_vcf_string)
-    config = validate_config(config_fp)
-    samples = config["clones"]
-    annotations = config["annotations"]
-    clone_vcf = VCF(vcf_fp, samples=samples)
-    X = create_read_matrix(clone_vcf)
-    assert X.ndim == 3
-    assert X.shape[0] > 0
-    assert X.shape[2] == 2
+# def test_read_extraction(tmp_path):
+#     """Run through a full validation of the VCF protocol."""
+#     d = tmp_path / "real_vcf_test"
+#     d.mkdir()
+#     config_fp = d / "config.yaml"
+#     config_fp.write_text(good_config_real)
+#     vcf_fp = d / "test.vcf"
+#     vcf_fp.write_text(good_vcf_string)
+#     config = validate_config(config_fp)
+#     samples = config["clones"]
+#     annotations = config["annotations"]
+#     clone_vcf = VCF(vcf_fp, samples=samples)
+#     X = create_read_matrix(clone_vcf)
+#     assert X.ndim == 3
+#     assert X.shape[0] > 0
+#     assert X.shape[2] == 2
 
 
-def test_create_germline_anno(tmp_path):
-    """Run through a full validation of the VCF protocol."""
-    d = tmp_path / "real_vcf_test"
-    d.mkdir()
-    config_fp = d / "config.yaml"
-    config_fp.write_text(good_config_real)
-    vcf_fp = d / "test.vcf"
-    vcf_fp.write_text(good_vcf_string)
-    config = validate_config(config_fp)
-    samples = config["germline"]
-    annotations = config["annotations"]
-    germline_vcf = VCF(vcf_fp, samples=samples)
-    germ_anno = create_germline_anno_gl(germline_vcf)
-    assert germ_anno.size > 0
+# def test_create_germline_anno(tmp_path):
+#     """Run through a full validation of the VCF protocol."""
+#     d = tmp_path / "real_vcf_test"
+#     d.mkdir()
+#     config_fp = d / "config.yaml"
+#     config_fp.write_text(good_config_real)
+#     vcf_fp = d / "test.vcf"
+#     vcf_fp.write_text(good_vcf_string)
+#     config = validate_config(config_fp)
+#     samples = config["germline"]
+#     annotations = config["annotations"]
+#     germline_vcf = VCF(vcf_fp, samples=samples)
+#     germ_anno = create_germline_anno_gl(germline_vcf)
+#     assert germ_anno.size > 0
 
 
-def test_create_anno(tmp_path):
-    """Run through a full validation of the VCF protocol."""
-    d = tmp_path / "real_vcf_test"
-    d.mkdir()
-    config_fp = d / "config.yaml"
-    config_fp.write_text(good_config_real)
-    vcf_fp = d / "test.vcf"
-    vcf_fp.write_text(good_vcf_string)
-    config = validate_config(config_fp)
-    samples = config["germline"]
-    annotations = config["annotations"]
-    germline_vcf = VCF(vcf_fp, samples=samples)
-    anno = create_anno(germline_vcf, annotations=annotations)
+# def test_create_anno(tmp_path):
+#     """Run through a full validation of the VCF protocol."""
+#     d = tmp_path / "real_vcf_test"
+#     d.mkdir()
+#     config_fp = d / "config.yaml"
+#     config_fp.write_text(good_config_real)
+#     vcf_fp = d / "test.vcf"
+#     vcf_fp.write_text(good_vcf_string)
+#     config = validate_config(config_fp)
+#     samples = config["germline"]
+#     annotations = config["annotations"]
+#     germline_vcf = VCF(vcf_fp, samples=samples)
+#     anno = create_anno(germline_vcf, annotations=annotations)

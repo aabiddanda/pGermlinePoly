@@ -40,18 +40,18 @@ We specifically want to model how the germline sample, alongside additional info
 
 \section*{Model}
 
-We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote or polymorphism. Considering the likelihood across
+We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z_k\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote or polymorphism. Considering the likelihood across
 
 \begin{equation}
 \begin{aligned}
-P(\mathbf{A}_k, \mathbf{R_k} | z_k=\texttt{het}) &= \prod_j^J  \texttt{Bin}\left(a_{jk}, a_{jk}+r_{jk}, \frac{1}{2}\right)
+P(\mathbf{A}_k, \mathbf{R}_k | z_k=\texttt{het}) &= \prod_j^J  \texttt{Bin}\left(a_{jk}, a_{jk}+r_{jk}, \frac{1}{2}\right)
 \end{aligned}
 \end{equation}
 
 
 \begin{equation}
 \begin{aligned}
-P(\mathbf{A}_k, \mathbf{R_k} | z_k=\texttt{somatic}) &= \prod_j^J  \alpha \texttt{Bin} \left(a_{jk}, a_{jk}+r_{jk}, \frac{1}{2}\right) + (1 - \alpha)\texttt{Bin}(a_{jk}, a_{jk}+r_{jk}, \epsilon)
+P(\mathbf{A}_k, \mathbf{R}_k | z_k=\texttt{somatic}) &= \prod_j^J  \alpha \texttt{Bin} \left(a_{jk}, a_{jk}+r_{jk}, \frac{1}{2}\right) + (1 - \alpha)\texttt{Bin}(a_{jk}, a_{jk}+r_{jk}, \epsilon)
 \end{aligned}
 \end{equation}
 
@@ -61,16 +61,15 @@ Combining this likelihood definition with prior probabilities ($P(z_k = z)$) lea
 
 \begin{equation}
 \begin{aligned}
-P(z_k=\texttt{het} | \mathbf{A}_k, \mathbf{R_k}) &= \frac{ P(\mathbf{A}_k, \mathbf{R_k} | z_k=\texttt{het}) \times P(z_k = \texttt{het}) }{\sum_{z \in \{\texttt{het}, \texttt{somatic}\}} P(\mathbf{A}_k, \mathbf{R_k} | z_k=z) \times P(z_k = z)   }
+P(z_k=\texttt{het} | \mathbf{A}_k, \mathbf{R}_k) &= \frac{ P(\mathbf{A}_k, \mathbf{R}_k | z_k=\texttt{het}) \times P(z_k = \texttt{het}) }{\sum_{z \in \{\texttt{het}, \texttt{somatic}\}} P(\mathbf{A}_k, \mathbf{R_k} | z_k=z) \times P(z_k = z)   }
 \end{aligned}
 \end{equation}
 
-
-We define the latent variable $Z_k$ as an indicator that the $k^{th}$ variant is \textit{germline polymorphic}. Following this definition,  we can also focus on using annotations $\theta_k$ to help with the "prior" probability $P(Z_{k} | \theta_{k})$ , where $\theta_{k}$ represents a set of annotations for the $k^{th}$ site (e.g., germline sample genotype likelihood, gnomAD allele frequency, local GC content, etc). We create the following logistic model for the priors based on $L$ observed annotations:
+Following this definition, we can also use annotations, $\mathbf{\theta}_k$, to help with the "prior" probability $P(Z_{k} | \Theta_{k})$ , where $\Theta_{k}$ represents a set of $L$ annotations for the $k^{th}$ site (e.g., germline sample genotype likelihood, gnomAD allele frequency, local GC content, etc). Using a logistic model for the priors we find:
 
 \begin{equation}
 \begin{aligned}
-	x_{k} &= \sum_l^L \lambda_l \theta_{kl}\\
+	x_{k} &= \sum_l^L \lambda_l \Theta_{kl}\\
 	\pi_{k} &= P(Z_{k} = 1 | \theta_{k}, \Lambda) = \frac{1}{1 + e^{-x_{k}}}
 \end{aligned}
 \end{equation}

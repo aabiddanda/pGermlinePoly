@@ -9,14 +9,13 @@ from poly_utils import (
     complete_loglik,
     d2_fun,
     geno_loglik,
-    incomplete_loglik,
     log_prior,
     mle_est_loglik,
     posterior_poly,
     single_var_logll,
     var_loglik,
 )
-from scipy.optimize import minimize
+from scipy.optimize import minimize, minimize_scalar
 from scipy.stats import beta, binom, betabinom, norm, poisson, uniform
 
 
@@ -27,8 +26,8 @@ class ProbGermline:
         """Initialize the class.
 
         Arguments:
-          - X (`np.array`): The genotype-likelihoods of each possible model (log-spaced ...)
-          - Theta (`np.array`): The K x A matrix of annotations we are using.
+          - X (`np.array`): a M x J x 2 matrix of read counts
+          - Theta (`np.array`): The M x A matrix of annotations
 
         """
         assert X.ndim == 3
@@ -64,9 +63,7 @@ class ProbGermline:
             pi_k[k] = log_prior(lambdas, self.Theta[k, :])
         return pi_k
 
-    def post_prob_poly(
-        self, lambdas=np.array([0.0, 0.0], dtype="double"), npts=20, a0=10.0
-    ):
+    def post_prob_poly(self, lambdas=np.array([0.0, 0.0], dtype="double")):
         """Posterior probability of being germline polymorphic.
 
         Arguments:
@@ -144,17 +141,6 @@ class ProbGermline:
             a0=a0,
             npts=npts,
         )
-        return logll
-
-    def incomplete_logll(self, gammas_k, lambdas=np.array([0.0, 0.0], dtype="double")):
-        """Compute the incomplete-data log-likelihood for optimization.
-
-        Note: this assumes that you have the posteriors pre-computed.
-
-        """
-        assert gammas_k.size == self.K
-        assert lambdas.size == self.A
-        logll = incomplete_loglik(self.K, self.J, lambdas, gammas_k, self.Theta, self.X)
         return logll
 
     def naive_mle(self, algo="L-BFGS-B", npts=20, disp=False):
@@ -269,12 +255,11 @@ class MutectLOD:
     def infer_germline_weights(self, germline_anno, annos):
         """Infer MLE estimates for the germline contributions."""
         assert self.lod is not None
-        betas = np.zeros(1 + annos.shape[1])
+        raise NotImplementedError("LOD Scores under the mutect model is not ready yet!")
 
     def lod_germline(self, germline_anno, annos):
         """Compute posterior LOD score using the germline annotation."""
-        # 1. Fit weights for annotations for this likelihood?
-        self.lod_scores[:, 2] * pm + (self.lod_scores[:, 0]) * (1 - pm)
+        raise NotImplementedError("LOD Scores under the mutect model is not ready yet!")
 
     def lod_variant(self):
         """Compute posterior LOD score of being a germline variant."""
@@ -298,7 +283,7 @@ class BetaOverdispersion:
         m = self.X.shape[0]
         rhos = np.zeros(m)
         for i in range(m):
-            p_hat = self.X[i, :, 1].sum() / self.X[i, :, :].sum()
+            phat = self.X[i, :, 1].sum() / self.X[i, :, :].sum()
             alt_reads = self.X[i, :, 1].sum()
             ref_reads = self.X[i, :, 0].sum()
             opt_rho = minimize_scalar(
