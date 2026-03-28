@@ -40,7 +40,7 @@ We specifically want to model how the germline sample, alongside additional info
 
 \section*{Model}
 
-We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z_k\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote or polymorphism. Considering the likelihood across
+We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z_k\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote. Considering the likelihood across
 
 \begin{equation}
 \begin{aligned}
@@ -55,6 +55,18 @@ P(\mathbf{A}_k, \mathbf{R}_k | z_k=\texttt{somatic}) &= \prod_j^J  \alpha \textt
 \end{aligned}
 \end{equation}
 
+
+Where $\alpha$ is the latent variant allele frequency (VAF). One approach may be to simply evaluate the likelihood-ratio between the two hypotheses:
+
+
+\begin{equation}
+\begin{aligned}
+L(\alpha) &= \frac{P(\mathbf{A}_k, \mathbf{R}_k | z_k=\texttt{somatic})}{P(\mathbf{A}_k, \mathbf{R}_k | z_k=\texttt{het})}\\
+&= \frac{\prod_j^J  \alpha \texttt{Bin} \left(a_{jk}, a_{jk}+r_{jk}, \frac{1}{2}\right) + (1 - \alpha)\texttt{Bin}(a_{jk}, a_{jk}+r_{jk}, \epsilon)}{\prod_j^J  \texttt{Bin}\left(a_{jk}, a_{jk}+r_{jk}, \frac{1}{2}\right)}
+\end{aligned}
+\end{equation}
+
+However, there may be a unique opportunity to construct a prior probability distribution which takes advantage of pre-existing annotations to inform on $Z_k$. This
 
 Combining this likelihood definition with prior probabilities ($P(z_k = z)$) leads to a posterior probability for $P(z_k = \texttt{het} | \mathbf{A}_k, \mathbf{R_k})$:
 
@@ -74,65 +86,44 @@ Following this definition, we can also use annotations, $\mathbf{\theta}_k$, to 
 \end{aligned}
 \end{equation}
 
-Using this kind of prior, we can model each sites genotype likelihood as coming from a mixture of the two latent distributions:
-
-$$P(GL | \theta, \Lambda) = \prod_k^K \pi_k P(GL_k| Z_k = 1) + (1 - \pi_k)P(GL_k | Z_k = 0)$$
-, where each of the $K$ sites are treated as independent realizations of this data generating process. If we empirically estimate $\hat{\alpha}_k$ as the MLE estimate of the VAF (using no prior information), then the total likelihood for the data is:
 
 
 
-\begin{equation}
-P(GL | \Lambda, \hat{\alpha}, \epsilon) = \prod^K \pi_k \left(\prod^J \sum_{g \in \{0,1,2\}} P(GL_k | P(G_j = g | Z_k = 1, \epsilon, \alpha_0) \right) + (1 - \pi_k)\left(\prod^J \sum_{g \in \{0,1,2\}} GL_k(g)P(G_j = g | Z_k = 0, \epsilon, \alpha_0) \right)
-\end{equation}
 
-Each iteration of this likelihood will take $\mathcal{O}(KJL)$ to compute. We describe some of the pre-computation and tools used for parameter estimation in a subsequent section. With parameters $\hat{\Lambda}, \hat{\alpha_0}, \epsilon$ we can estimate the posterior probability of $Z_k = 1$ as:
 
-\begin{equation}
-\begin{aligned}
-P(Z_k = 1 | GL_k, \theta_k, \Lambda) &= \frac{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \alpha_0, \epsilon)}{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \alpha_0,\epsilon) + P(GL_k|Z_k=0)P(Z_k=0 | \Lambda, \alpha_0, \epsilon)}\\
-&=  \frac{\pi_k P(GL_k|Z_k=1, \alpha_0)}{\pi_k P(GL_k|Z_k=1, \alpha_0, \epsilon) + (1 - \pi_k)P(GL_k|Z_k=0, \alpha_0,\epsilon)}
-\end{aligned}
-\end{equation}
 
-\begin{figure}[H]
-\begin{center}
-\includegraphics{figs/pGermlinePoly.model.png}
-\end{center}
-\caption{Graphical Model describing the likelihood model. $K$ dictates the number of sites present in gVCF format.}
-\end{figure}
+
+% $$P(GL | \theta, \Lambda) = \prod_k^K \pi_k P(GL_k| Z_k = 1) + (1 - \pi_k)P(GL_k | Z_k = 0)$$
+% , where each of the $K$ sites are treated as independent realizations of this data generating process. If we empirically estimate $\hat{\alpha}_k$ as the MLE estimate of the VAF (using no prior information), then the total likelihood for the data is:
+
+
+
+% \begin{equation}
+% P(GL | \Lambda, \hat{\alpha}, \epsilon) = \prod^K \pi_k \left(\prod^J \sum_{g \in \{0,1,2\}} P(GL_k | P(G_j = g | Z_k = 1, \epsilon, \alpha_0) \right) + (1 - \pi_k)\left(\prod^J \sum_{g \in \{0,1,2\}} GL_k(g)P(G_j = g | Z_k = 0, \epsilon, \alpha_0) \right)
+% \end{equation}
+
+% Each iteration of this likelihood will take $\mathcal{O}(KJL)$ to compute. We describe some of the pre-computation and tools used for parameter estimation in a subsequent section. With parameters $\hat{\Lambda}, \hat{\alpha_0}, \epsilon$ we can estimate the posterior probability of $Z_k = 1$ as:
+
+% \begin{equation}
+% \begin{aligned}
+% P(Z_k = 1 | GL_k, \theta_k, \Lambda) &= \frac{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \alpha_0, \epsilon)}{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \alpha_0,\epsilon) + P(GL_k|Z_k=0)P(Z_k=0 | \Lambda, \alpha_0, \epsilon)}\\
+% &=  \frac{\pi_k P(GL_k|Z_k=1, \alpha_0)}{\pi_k P(GL_k|Z_k=1, \alpha_0, \epsilon) + (1 - \pi_k)P(GL_k|Z_k=0, \alpha_0,\epsilon)}
+% \end{aligned}
+% \end{equation}
+
+% \begin{figure}[H]
+% \begin{center}
+% \includegraphics{figs/pGermlinePoly.model.png}
+% \end{center}
+% \caption{Graphical Model describing the likelihood model. $K$ dictates the number of sites present in gVCF format.}
+% \end{figure}
 
 \subsection*{Computational Methods}
-
-\noindent Since the full likelihood takes $\mathcal{O}(KJL)$ to compute, we focus here on strategies for limiting this computation as the number of variants $K$ grows large. In realistic datasets from blood clonal sequencing available today $K \sim 10^7$ within a GATK VCF callset.
-
-\begin{enumerate}
-\item \textbf{Precomputation + Thinning}
-
-To avoid using the full dataset for hyperparameter estimation via Empirical Bayes we restrict our inference to only considering some proportion $\gamma$ of the sites in a joint-called VCF file with genotype likelihoods. Thinning to a restricted proportion of sites spread throughout the genome helps substantially for hyperparameter training.
-
-\item \textbf{Initialization Scan}
-
-One of the more critical parameters to be estimated is $\alpha_0$, or the concentration parameter of the Beta-Binomial distribution. The core idea here is that for true somatic variants, the alleles carried \textit{within} the pool of clones will be overdispersed relative to binomial expectations (since there is effectively a mixture of clones carrying the somatic variant).
-
-We can use this idea in the genotype-likelihood space to estimate the parameters of a beta-binomial distribution \textit{per-site} ($\tilde{\alpha}^{(k)}_0$) to prioritize estimating the $\alpha_0$ hyperparameter genome-wide from the over-dispersed ones. The per-site likelihood is therefore:
-
-\begin{equation}
-\begin{aligned}
-	l(\alpha^{(k)}_0) &= \log P(GL_k | \alpha^{(k)}_0)\\
-	&= \log \left(\prod_j^J \sum_{g\in{0,1,2}} GL_{jk}(g)P(G_{jk} = g | \alpha^{k}_0)\right) \\
-	&= \sum_j^J \log\left(\sum_{g\in{0,1,2}} GL_{jk}(g) \binom{n}{g} \frac{B(g + \alpha^{(k)}_0, 2 - g + \alpha^{(k)}_0)}{B(\alpha^{(k)}_0, \alpha^{(k)}_0)}\right)
-\end{aligned}
-\end{equation}
-
-Performing this as a one-time scan for estimating per-variant overdispersion parameters, we can prioritize dispersion estimates that are a bit lower than 1 and estimate $\hat{\alpha}_0$ in this way. We also first
-
-\end{enumerate}
 
 
 \section*{Model Validation and Performance}
 
 For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the contribution of two annotations $\lambda_1, \lambda_2$ to the posterior probability of being a germline polymorphic site. We artificially simulated $K' = 100$ sites as true somatic variants in this setting. \\
-
 
 
 \section*{Limitations / Model Improvement}
@@ -145,17 +136,17 @@ For initial validation, we simulated read-level data under the model and for $K=
 \end{itemize}
 
 
-\section*{Previous Models}
+\section*{Model Comparisons}
 
 \subsection*{Beta-Binomial Overdispersion Model}
 
-One of the first models (CITE) uses the observation that for truly somatic variants, only a fraction of sampled clonal lineages may carry it, making the \textit{pooled} alternative read count ($R$) across all samples \textit{overdispersed}. One way to capture this by estimating the overdispersion ($\hat{\rho}$) of a beta-binomial distribution accounting for the reads:
+One of the first models for identifying somatic mutations in this clonal sequencing setting (without germline references) \citep{Spencer-Chapman2021-cy} uses the observation that for truly somatic variants, only a fraction of sampled clonal lineages may carry it, making the \textit{pooled} alternative read count ($R$) across all samples \textit{overdispersed}. One way to capture this by estimating the overdispersion ($\hat{\rho}$) of a beta-binomial distribution accounting for the reads:
 
 $$
 R | N \sim BetaBinom\left(\hat{p}\frac{1 - \rho}{\rho}, (1 - \hat{p})\frac{1-\rho}{\rho}\right)
 $$
 
-, where $\hat{p}$ is the MLE estimate for the VAF. In early publications (CITE), the proposal was simply to exclude any variant with $\hat{\rho} > 0.1$. This approach works quite well in simulations with fairly even coverage across samples (at the proposed variant in question). In \texttt{pGermlinePoly} we provide this ``pooled overdispersion'' estimator as an annotation in order to
+, where $\hat{p}$ is the MLE estimate for the VAF. In the original work\citep{Spencer-Chapman2021-cy}, the proposal was simply to exclude any variant with $\hat{\rho} > 0.1$. This approach works quite well in simulations with fairly even coverage across samples (at the proposed variant in question). In \texttt{pGermlinePoly} we provide this ``pooled overdispersion'' estimator as a secondary annotation under request in case the user would like to incorporate this int oteh fi
 
 
 \bibliographystyle{unsrt} % We choose the "plain" reference style
