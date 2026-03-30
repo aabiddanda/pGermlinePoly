@@ -269,9 +269,12 @@ class BetaOverdispersion:
     def __init__(self, X):
         """
         Arguments:
-            - X (`np.array`): a M x K x 2 matrix of read counts
+            - X (`np.array`): a M x J x 2 matrix of read counts
         """
+        assert X.ndim == 3
+        assert X.shape[2] == 2  # only bi-allelic variants ...
         self.X = X
+        self.M, self.J, _ = self.X.shape
 
     def estimate_rhos(self):
         """Estimate the overdispersion for the Beta-Binomial model."""
@@ -288,7 +291,7 @@ class BetaOverdispersion:
                         alt_reads + ref_reads,
                         a=phat * (1 - x) / x,
                         b=(1 - phat) * (1 - x) / x,
-                    ).sum()
+                    )
                 ),
                 bounds=(1e-6, 1 - 1e-6),
             ).x
@@ -545,6 +548,40 @@ class ClonalSim:
         self.germline_somatic_tot_reads = somatic_tot_reads
         self.germline_somatic_alt_reads = somatic_alt_reads
         self.germline_somatic_pl = somatic_pl
+
+    def create_read_matrix(self):
+        """Create a read-matrix from simulated germline mutations."""
+        X_somatic = np.array(
+            [
+                [
+                    [
+                        self.somatic_tot_reads[i, j] - self.somatic_alt_reads[i, j],
+                        self.somatic_alt_reads[i, j],
+                    ]
+                    for j in range(self.J)
+                ]
+                for i in range(self.n_somatic_mut)
+            ]
+        )
+        X_germline = np.array(
+            [
+                [
+                    [
+                        self.germline_clone_tot_reads[i, j]
+                        - self.germline_clone_alt_reads[i, j],
+                        self.germline_clone_alt_reads[i, j],
+                    ]
+                    for j in range(self.J)
+                ]
+                for i in range(self.n_germline_poly)
+            ]
+        )
+        # Is this the correct stack?
+        X = np.vstack([X_somatic, X_germline])
+        M, J, L = X.shape
+        assert J == self.J
+        assert L == 2
+        return X
 
     def create_gt_string(self, alt_reads=0, tot_reads=0, pl=np.array([0, 0, 0])):
         """Create a genotype-string."""

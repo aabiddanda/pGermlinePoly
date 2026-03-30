@@ -2,7 +2,7 @@
 
 import logging
 
-import click
+import rich_click as click
 from cyvcf2 import VCF, Writer
 from tqdm import tqdm
 
@@ -90,12 +90,20 @@ logging.basicConfig(
     help="Estimate the variant allele frequency.",
 )
 @click.option(
-    "--mutect",
+    "--mutect2",
     required=False,
     default=False,
     is_flag=True,
     type=bool,
     help="LOD Score from Mutect2.",
+)
+@click.option(
+    "--betabinomial",
+    required=False,
+    default=False,
+    is_flag=True,
+    type=bool,
+    help="Implement the Beta-Binomial overdispersion method from Spencer-Chapman et al.",
 )
 @click.option(
     "--out",
@@ -105,7 +113,7 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
-def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, out):
+def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, mutect2, betabinomial, out):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
     config = validate_config(config)

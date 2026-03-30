@@ -7,7 +7,9 @@ requires = [
     "numpy",
     "msprime",
     "cyvcf2",
+    "rich_click",
     "cerberus",
+    "tqdm",
     "extension-helpers"
 ]
 build-backend = "setuptools.build_meta"
@@ -19,7 +21,7 @@ description = "\"Statistical method to estimate the posterior probability of ger
 keywords = ["somatic", "mutation", "cancer"]
 classifiers = ["Development Status :: 3 - Alpha", "Intended Audience :: Science/Research", "Programming Language :: Python :: 3"]
 requires-python = ">= 3.12"
-dependencies = [ "numpy", "scipy", "msprime", "Cython", "Click", "cyvcf2", "cerberus"]
+dependencies = [ "numpy", "scipy", "msprime", "Cython", "rich_click", "cyvcf2", "tqdm", "cerberus"]
 dynamic = ["version"]
 authors = [{name = "Arjun Biddanda", email = "aabiddanda@gmail.com"}]
 

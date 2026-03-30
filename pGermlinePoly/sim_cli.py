@@ -2,7 +2,7 @@
 
 import logging
 
-import click
+import rich_click as click
 import yaml
 
 from pGermlinePoly import ClonalSim

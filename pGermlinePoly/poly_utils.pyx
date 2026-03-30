@@ -89,12 +89,11 @@ cpdef double var_loglik(int ref_reads, int alt_reads, double f, double eps=1e-3)
 
 cpdef double posterior_poly(int[:] ax, int[:] rx,  double[:] lambdas, double[:] anno, double alpha, double eps=1e-3):
     """Calculate the posterior probability of germline polymorphism."""
-    cdef int k,j,p
-    cdef double denom, num, post_prob
+    cdef double denom, num
     cdef double pi0_k
     pi0_k = log_prior(lambdas, anno)
     p_somatic = logprob_somatic(ax, rx, alpha, eps)
-    p_het = logprob_het(ax, rx, eps)
+    p_het = logprob_het(ax, rx)
     denom = logaddexp(log(pi0_k) + p_het, log(1.0 - pi0_k) + p_somatic)
     num = log(pi0_k) + p_het
     return num - denom
