@@ -7,7 +7,12 @@ from cyvcf2 import VCF, Writer
 from tqdm import tqdm
 
 from pGermlinePoly import ProbGermline
-from pGermlinePoly.io import *  # noqa
+from pGermlinePoly.io import (
+    validate_config,
+    check_samples,
+    check_annotations,
+    create_germline_anno_gl,
+)
 
 # Setup the logging configuration for the CLI
 logging.basicConfig(

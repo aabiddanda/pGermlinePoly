@@ -30,7 +30,7 @@ class ProbGermline:
 
     def __str__(self):
         """Return a string representation of the object."""
-        return f"pGermlineObj ({self.M} sites; {self.J} clones; {self.A} annotations)"
+        return f"pGermlineObj ({self.M} sites {self.J} clones {self.A} annotations)"
 
     def impute_anno(self):
         """Impute annotations using the site-wise mean."""
@@ -40,7 +40,7 @@ class ProbGermline:
         self.Theta[inds] = np.take(col_means, inds[1])
 
     def mle_vaf(self, **kwargs):
-        """Estimate VAF using maximum-likelihood pooled across samples."""
+        """Estimate VAF using maximum-likelihood across all samples."""
         mle_p = np.zeros(self.M)
         logll_p = np.zeros(self.M)
         for i in range(self.M):
@@ -65,9 +65,9 @@ class ProbGermline:
         """Prior probability of a germline polymorphism."""
         assert lambdas.size == self.A
         assert lambdas.ndim == 1
-        pi_k = np.zeros(self.K)
-        for k in range(self.K):
-            pi_k[k] = log_prior(lambdas, self.Theta[k, :])
+        pi_k = np.zeros(self.M)
+        for i in range(self.M):
+            pi_k[i] = log_prior(lambdas, self.Theta[i, :])
         return pi_k
 
     def post_prob_poly(self, lambdas=np.array([0.0, 0.0], dtype="double")):
@@ -82,45 +82,33 @@ class ProbGermline:
         """
         assert lambdas.size == self.A
         assert np.all(~np.isnan(lambdas))
-        assert a0 > 1.0
-
-        post_k = np.zeros(self.K)
-        for k in range(self.K):
-            post_k[k] = posterior_poly(
-                J=self.J,
+        assert self.vaf is not None
+        post_k = np.zeros(self.M)
+        for i in range(self.M):
+            post_k[i] = posterior_poly(
+                ax=self.X[i, :, 1],
+                rx=self.X[i, :, 0],
                 lambdas=lambdas,
-                Theta=self.Theta[k, :],
-                X=self.X[k, :, :],
-                npts=npts,
-                a0=a0,
+                anno=self.Theta[i, :],
+                alpha=self.vaf[i],
             )
         return post_k
 
-    def est_vaf_CI(self, h=1e-5):
-        """Estimate the variant allele frequency from likelihoods across all the clonal data.
+    # def est_vaf_CI(self, h=1e-5):
+    #     """Estimate the variant allele frequency from likelihoods across all the clonal data.
 
-        Uses the fisher information to account for heterogeneous sequencing depth.
-        """
-        mle_p, logll_p = mle_est_loglik(K=self.K, J=self.J, X=self.X)
-        ci_mle_p = np.zeros(shape=(self.K, 3))
-        for k in range(self.K):
-            ll = lambda p: single_var_logll(J=self.J, X=self.X[k, :, :], p=p)
-            # Take the negative of the expectation of the second derivative ...
-            fisher_I_inv = 1.0 / -d2_fun(ll, mle_p[k], h=h)
-            ci_mle_p[k, 0] = mle_p[k] - 1.96 * np.sqrt(1.0 / self.J * fisher_I_inv)
-            ci_mle_p[k, 1] = mle_p[k]
-            ci_mle_p[k, 2] = mle_p[k] + 1.96 * np.sqrt(1.0 / self.J * fisher_I_inv)
-        return mle_p, logll_p, ci_mle_p
-
-    def loglik_ratio(self, logll_p=None):
-        """Estimating the naive loglikelihood ratio."""
-        if logll_p is None:
-            _, logll_p = self.mle_est_loglik()
-        logll_null = np.zeros(self.K)
-        for k in range(self.K):
-            logll_null[k] = single_var_logll(J=self.J, X=self.X[k, :, :], p=0.5)
-        ll_ratio = -2 * (logll_null - logll_p)
-        return ll_ratio
+    #     Uses the fisher information to account for heterogeneous sequencing depth.
+    #     """
+    #     mle_p, logll_p = mle_est_loglik(K=self.K, J=self.J, X=self.X)
+    #     ci_mle_p = np.zeros(shape=(self.K, 3))
+    #     for k in range(self.K):
+    #         ll = lambda p: single_var_logll(J=self.J, X=self.X[k, :, :], p=p)
+    #         # Take the negative of the expectation of the second derivative ...
+    #         fisher_I_inv = 1.0 / -d2_fun(ll, mle_p[k], h=h)
+    #         ci_mle_p[k, 0] = mle_p[k] - 1.96 * np.sqrt(1.0 / self.J * fisher_I_inv)
+    #         ci_mle_p[k, 1] = mle_p[k]
+    #         ci_mle_p[k, 2] = mle_p[k] + 1.96 * np.sqrt(1.0 / self.J * fisher_I_inv)
+    #     return mle_p, logll_p, ci_mle_p
 
     # def complete_logll(
     #     self, lambdas=np.array([0.0, 0.0], dtype="double"), a0=5.0, npts=20
@@ -591,7 +579,7 @@ class ClonalSim:
 ##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
 ##INFO=<ID=ExternalAF,Number=A,Type=Float,Description="Global Allele Frequency, for each ALT allele, from external population reference">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
-##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth; some reads may have been filtered">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth some reads may have been filtered">
 ##INFO=<ID=SM,Number=1,Type=Integer,Description="Somatic mutation indicator.">
 ##contig=<ID=chr1,length={int(self.seq_len)}>
 """
@@ -649,7 +637,7 @@ class ClonalSim:
                 tot_gq += gq
                 cur_dp.append(dp)
             # Setting the info string here ...
-            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};ExternalAF={external_af};SM=0"
+            info_str = f"AC={cur_nalt}AF={cur_nalt / cur_nonmissing}AN={cur_nonmissing}DP={np.mean(cur_dp)}ExternalAF={external_af}SM=0"
             # Collapsing all of this into string output for this VCF record ...
             cur_var_str = (
                 "\t".join(
@@ -704,7 +692,7 @@ class ClonalSim:
                 tot_gq += gq
                 cur_dp.append(dp)
             # Setting the info string here ...
-            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};ExternalAF={external_af};SM=1"
+            info_str = f"AC={cur_nalt}AF={cur_nalt / cur_nonmissing}AN={cur_nonmissing}DP={np.mean(cur_dp)}ExternalAF={external_af}SM=1"
             # Collapsing all of this into string output for this VCF record ...
             cur_var_str = (
                 "\t".join(

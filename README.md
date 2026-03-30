@@ -10,7 +10,7 @@ Currently the package is installable via a local `pip install` using the followi
 
 ```
 git clone git@github.com:aabiddanda/pGermlinePoly.git
-cd pGermlinePoly; pip install .
+cd pGermlinePoly pip install .
 ```
 
 Following this installation, you should be able to run either `pytest` to run the core unit tests for all of the functions in the library as well as testing out the two commandline executables detailed below.
@@ -39,7 +39,7 @@ Options:
                                   deviation from germline heterozygote.
   --vaf                           Estimate the variant allele frequency.
   -o, --out TEXT                  Output VCF file (defaults to stdout)
-                                  [default: -; required]
+                                  [default: - required]
   --help                          Show this message and exit.
 ```
 
@@ -99,7 +99,7 @@ A main feature of this package is that we actually are able to mimic the simulat
 The generated VCF file will not be sorted by position by default (which can mess up indexing). The way around this is to directly pass the output to `bcftools sort ` and indexing:
 
 ```
-somatic-sim [options] -o /dev/stdout | bcftools sort | bgzip > out.vcf.gz; tabix -f out.vcf.gz
+somatic-sim [options] -o /dev/stdout | bcftools sort | bgzip > out.vcf.gz tabix -f out.vcf.gz
 ```
 
 We encourage `tabix` indexing as a broader statement of the validity of the VCF file and that it will comply with other common tools.
@@ -113,12 +113,12 @@ Usage: somatic-sim [OPTIONS]
 
 Options:
   -l, --seqlen INTEGER           Length of contig to simulate somatic
-                                 mutations along.  [default: 10000000;
+                                 mutations along.  [default: 10000000
                                  required]
-  -j, --nclones INTEGER          Number of sampled clones.  [default: 5;
+  -j, --nclones INTEGER          Number of sampled clones.  [default: 5
                                  required]
   -a, --age FLOAT                Age of individual from clonal sampling.
-                                 [default: 30.0; required]
+                                 [default: 30.0 required]
   --afs_alpha FLOAT              Estimate of alpha parameter for allele
                                  frequency - default from NFE AF in gnomAD v3
                                  [default: 0.31699444395046117]
@@ -145,7 +145,7 @@ Options:
                                  [default: 30.0]
   --seed INTEGER                 Random number seed for simulations.
                                  [default: 42]
-  -o, --out TEXT                 Output VCF file  [default: out.vcf; required]
+  -o, --out TEXT                 Output VCF file  [default: out.vcf required]
   -ot, --out_tree TEXT           Output newick file for somatic clone
                                  genealogy (unscaled).
   -oc, --out_config TEXT         Output yaml-based config file for applying

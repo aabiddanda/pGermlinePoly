@@ -90,26 +90,6 @@ def create_anno(vcf, annotations=[]):
     return np.vstack(total_anno).T
 
 
-def create_clonal_pl_matrix(vcf):
-    """Create the X matrix for inference from clonal samples.
-
-    The X matrix is a K x J x 3 tensor for biallelic SNPs of the normalized PL values from GATK.
-    """
-    assert vcf.contains("PL")
-    assert len(vcf.samples) > 1
-    X = []
-    for v in tqdm(vcf):
-        if v.is_snp and (len(v.ALT) == 1):
-            x = v.format("PL")
-            A = [invert_pl(x[i, :]) for i in range(x.shape[0])]
-            X.append(A)
-        else:
-            # NOTE: we could replace these with NaNs as well to signify missing data...
-            X.append(np.zeros(shape=(len(vcf.samples), 3)))
-    X = np.stack(X)
-    return X
-
-
 def create_read_matrix(vcf):
     """
     Create a matrix of read-counts from clonal samples.
