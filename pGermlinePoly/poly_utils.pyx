@@ -38,11 +38,11 @@ cdef double log1mexp(double a):
     else:
         return log1p(-exp(-a))
 
-cdef double logbinomial(int alt, int ref, double p):
+cdef double logbinomial(long alt, long ref, double p):
     """Log-probability mass function of the binomial distribution."""
     return alt * log(p) + ref*log(1. - p)
 
-cpdef double logprob_het(int[:] ax, int[:] rx):
+cpdef double logprob_het(long[:] ax, long[:] rx):
     """Log-probability mass function for a germline heterozygote."""
     cdef int i,j
     cdef double ll
@@ -52,7 +52,7 @@ cpdef double logprob_het(int[:] ax, int[:] rx):
         ll += logbinomial(ax[i], rx[i], p=0.5)
     return ll
 
-cpdef double logprob_somatic(int[:] ax, int[:] rx, double alpha, double eps=1e-3):
+cpdef double logprob_somatic(long[:] ax, long[:] rx, double alpha, double eps=1e-3):
     """Log-probability mass function for a somatic mutation."""
     cdef int i, j
     cdef double ll
@@ -62,7 +62,7 @@ cpdef double logprob_somatic(int[:] ax, int[:] rx, double alpha, double eps=1e-3
         ll += logaddexp(alpha*logbinomial(ax[i],rx[i],p=0.5), (1 - alpha)*logbinomial(ax[i],rx[i],p=eps))
     return ll
 
-cpdef loglik_ratio(int[:] ax, int[:] rx, double alpha, double eps=1e-3):
+cpdef loglik_ratio(long[:] ax, long[:] rx, double alpha, double eps=1e-3):
     """Evaluate the log-likelihood ratio between these two categories."""
     ll_het = logprob_het(ax, rx)
     ll_somatic = logprob_somatic(ax, rx, alpha=alpha, eps=eps)
@@ -94,7 +94,7 @@ cpdef double var_loglik(int ref_reads, int alt_reads, double f, double eps=1e-3)
     alt_logll = alt_reads * log(f * (1 - eps) + (1 - f)**eps  + eps)
     return ref_logll + alt_logll
 
-cpdef double posterior_poly(int[:] ax, int[:] rx,  double[:] lambdas, double[:] anno, double alpha, double eps=1e-3):
+cpdef double posterior_poly(long[:] ax, long[:] rx,  double[:] lambdas, double[:] anno, double alpha, double eps=1e-3):
     """Calculate the posterior probability of germline polymorphism."""
     cdef double denom, num
     cdef double pi0_k

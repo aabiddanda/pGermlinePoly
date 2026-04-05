@@ -16,7 +16,7 @@ X = np.array(
         [[1, 0], [8, 8]],
         [[3, 3], [5, 5]],
     ],
-    dtype="double",
+    dtype="int",
 )
 Theta = np.array([[2.0, 0.0], [0.0, 0.1], [1.1, np.nan]], dtype="double")
 
@@ -78,6 +78,32 @@ def test_est_vaf(X, A):
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
     prob_germline.mle_vaf()
+
+
+@pytest.mark.parametrize("X,A", [(X, Theta)])
+def test_llr_het(X, A):
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    llrs = prob_germline.loglik_ratio_het()
+    assert llrs.size == prob_germline.M
+
+
+@pytest.mark.parametrize("X,A", [(X, Theta)])
+def test_prior_poly(X, A):
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    pp = prob_germline.prior_poly(lambdas=np.zeros(A.shape[1]))
+    assert np.all(pp >= 0.0) and np.all(pp <= 1.0)
+
+
+@pytest.mark.parametrize("X,A", [(X, Theta)])
+def test_posterior_prob_poly(X, A):
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    pp = prob_germline.post_prob_poly(lambdas=np.zeros(A.shape[1]))
+    assert np.all(pp < 0.0)
 
 
 # def test_post_prob_even():
