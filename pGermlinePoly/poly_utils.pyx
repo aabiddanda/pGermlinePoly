@@ -80,6 +80,13 @@ cpdef double log_prior(double [:] l, double[:] a):
     prior_p = 1.0 / (1.0 + exp(-xk))
     return prior_p
 
+def d2_fun(f, x, h=1e-5):
+    """Symmetric second derivative function for log-likelihood.
+
+    https://en.wikipedia.org/wiki/Symmetric_derivative#The_second_symmetric_derivative
+    """
+    return (f(x+h) - 2*f(x) + f(x-h)) / (h**2)
+
 cpdef double var_loglik(int ref_reads, int alt_reads, double f, double eps=1e-3):
     """Calculate the likelihood of the underlying reads given the allele frequency."""
     cdef double ref_logll, alt_logll

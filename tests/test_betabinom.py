@@ -41,5 +41,8 @@ def test_betabinom_from_sim():
     assert clone_sim.n_somatic_mut > 0
     clone_sim.simulate_germline_somatic_muts()
     clone_sim.simulate_clonal_germline_muts()
-    # Can we make a read-matrix from the clonal sims as well?
     X = clone_sim.create_read_matrix()
+    betaoverdisp = BetaOverdispersion(X=X)
+    rhos = betaoverdisp.estimate_rhos()
+    assert rhos.ndim == 1
+    assert rhos.size == X.shape[0]

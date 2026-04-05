@@ -2,7 +2,14 @@
 
 import msprime
 import numpy as np
-from poly_utils import loglik_ratio, log_prior, var_loglik, geno_loglik
+from poly_utils import (
+    loglik_ratio,
+    log_prior,
+    var_loglik,
+    geno_loglik,
+    posterior_poly,
+    d2_fun,
+)
 from scipy.optimize import minimize_scalar
 from scipy.stats import beta, binom, betabinom, norm, poisson, uniform
 
@@ -16,11 +23,10 @@ class ProbGermline:
         Arguments:
           - X (`np.array`): a M x J x 2 matrix of read counts
           - Theta (`np.array`): The M x A matrix of annotations
-
         """
         assert X.ndim == 3
         self.M, self.J, _ = X.shape
-        self.M = X
+        self.X = X
         assert Theta.ndim == 2
         M, self.A = Theta.shape
         assert M == self.M
@@ -45,8 +51,9 @@ class ProbGermline:
         logll_p = np.zeros(self.M)
         for i in range(self.M):
             ax, rx = self.X[i, :, 0].sum(), self.X[i, :, 1].sum()
+            # Is this the actual MLE?
             mle_p[i] = ax / (ax + rx)
-            logll_p[i] = var_loglik(ax, rx, **kwargs)
+            logll_p[i] = var_loglik(ax, rx, f=mle_p[i], **kwargs)
         self.vaf = mle_p
         self.logl_vaf = logll_p
 
@@ -94,21 +101,24 @@ class ProbGermline:
             )
         return post_k
 
-    # def est_vaf_CI(self, h=1e-5):
-    #     """Estimate the variant allele frequency from likelihoods across all the clonal data.
+    def est_vaf_CI(self, h=1e-5, alpha=0.05, **kwargs):
+        """Estimate the variant allele frequency from likelihoods across all the clonal data.
 
-    #     Uses the fisher information to account for heterogeneous sequencing depth.
-    #     """
-    #     mle_p, logll_p = mle_est_loglik(K=self.K, J=self.J, X=self.X)
-    #     ci_mle_p = np.zeros(shape=(self.K, 3))
-    #     for k in range(self.K):
-    #         ll = lambda p: single_var_logll(J=self.J, X=self.X[k, :, :], p=p)
-    #         # Take the negative of the expectation of the second derivative ...
-    #         fisher_I_inv = 1.0 / -d2_fun(ll, mle_p[k], h=h)
-    #         ci_mle_p[k, 0] = mle_p[k] - 1.96 * np.sqrt(1.0 / self.J * fisher_I_inv)
-    #         ci_mle_p[k, 1] = mle_p[k]
-    #         ci_mle_p[k, 2] = mle_p[k] + 1.96 * np.sqrt(1.0 / self.J * fisher_I_inv)
-    #     return mle_p, logll_p, ci_mle_p
+        Uses the fisher information to account for heterogeneous sequencing depth.
+        """
+        if self.vaf is None:
+            self.mle_vaf()
+        ci_mle_p = np.zeros(shape=(self.M, 3))
+        z_crit = norm.ppf(alpha / 2)
+        for v in self.vaf:
+            ax, rx = self.X[i, :, 0].sum(), self.X[i, :, 1].sum()
+            ll = lambda p: var_loglik(ax, rx, f=p, **kwargs)
+            # Take the negative of the expectation of the second derivative ...
+            fisher_I_inv = 1.0 / -d2_fun(ll, mle_p[k], h=h)
+            ci_mle_p[k, 0] = v - z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
+            ci_mle_p[k, 1] = v
+            ci_mle_p[k, 2] = v + z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
+        return ci_mle_p
 
     # def complete_logll(
     #     self, lambdas=np.array([0.0, 0.0], dtype="double"), a0=5.0, npts=20
