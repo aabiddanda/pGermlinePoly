@@ -20,6 +20,7 @@ X = np.array(
 )
 Theta = np.array([[2.0, 0.0], [0.0, 0.1], [1.1, np.nan]], dtype="double")
 
+
 # # A stronger example where the first annotation can matter quite a bit ...
 # X2 = np.array(
 #     [
@@ -106,21 +107,25 @@ def test_posterior_prob_poly(X, A):
     assert np.all(pp < 0.0)
 
 
-# def test_post_prob_even():
-#     """Ideally the posterior of these with a flat prior should be 0.5."""
-#     X = np.array(
-#         [
-#             [invert_pl([0, 0, 0]), invert_pl([0, 0, 0])],
-#             [invert_pl([0, 0, 0]), invert_pl([0, 0, 0])],
-#         ],
-#         dtype="double",
-#     )
-#     Theta = np.array([[0.0, 0.0], [0.0, 0.0]], dtype="double")
-#     prob_germline = ProbGermline(X=X, Theta=Theta)
-#     prob_germline.impute_anno()
-#     post_k = prob_germline.post_prob_poly(npts=100)
-#     assert post_k.size == prob_germline.K
-#     assert np.all(np.isclose(np.exp(post_k), 0.5, atol=1e-2))
+def test_posterior_prob_even():
+    """Test with even posterior distribution due to same likelihood."""
+
+    X = np.array(
+        [
+            [[3, 3], [3, 3]],
+            [[3, 3], [3, 3]],
+            [[3, 3], [3, 3]],
+        ],
+        dtype="int",
+    )
+    A = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, np.nan]], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    pp = prob_germline.post_prob_poly(lambdas=np.zeros(A.shape[1]))
+    assert pp.size == X.shape[0]
+    assert np.all(pp == pp[0])
+
 
 
 # def test_post_prob_poly():

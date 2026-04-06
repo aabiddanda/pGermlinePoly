@@ -2,11 +2,7 @@
 # cython: cdivision=True
 # cython: wraparound=False
 
-from libc.math cimport exp, expm1, lgamma, log, log1p, log10
-
-import numpy as np
-from scipy.optimize import minimize_scalar
-
+from libc.math cimport exp, expm1, log, log1p, log10
 
 cdef extern from "math.h":
     float INFINITY
@@ -15,18 +11,18 @@ cpdef double logaddexp(double a, double b):
     """Log-add exponential for two values."""
     cdef double m
     cdef double c
-    m  = max(a, b)
+    m = max(a, b)
     c = exp(a - m) + exp(b - m)
     return m + log(c)
 
 cpdef double logsumexp(double[:] x):
     """Cython implementation of the logsumexp trick."""
-    cdef int i,n
+    cdef int i, n
     cdef double m = -1e32
     cdef double c = 0.0
     n = x.size
     for i in range(n):
-        m = max(m,x[i])
+        m = max(m, x[i])
     for i in range(n):
         c += exp(x[i] - m)
     return m + log(c)
@@ -44,7 +40,7 @@ cdef double logbinomial(long alt, long ref, double p):
 
 cpdef double logprob_het(long[:] ax, long[:] rx):
     """Log-probability mass function for a germline heterozygote."""
-    cdef int i,j
+    cdef int i, j
     cdef double ll
     j = ax.size
     ll = 0.0
@@ -58,8 +54,9 @@ cpdef double logprob_somatic(long[:] ax, long[:] rx, double alpha, double eps=1e
     cdef double ll
     j = ax.size
     ll = 0
-    for i in range(0,j):
-        ll += logaddexp(alpha*logbinomial(ax[i],rx[i],p=0.5), (1 - alpha)*logbinomial(ax[i],rx[i],p=eps))
+    for i in range(0, j):
+        ll += logaddexp(alpha*logbinomial(ax[i], rx[i], p=0.5),
+            (1 - alpha)*logbinomial(ax[i], rx[i], p=eps))
     return ll
 
 cpdef loglik_ratio(long[:] ax, long[:] rx, double alpha, double eps=1e-3):
@@ -68,7 +65,7 @@ cpdef loglik_ratio(long[:] ax, long[:] rx, double alpha, double eps=1e-3):
     ll_somatic = logprob_somatic(ax, rx, alpha=alpha, eps=eps)
     return 2*(ll_het - ll_somatic)
 
-cpdef double log_prior(double [:] l, double[:] a):
+cpdef double log_prior(double[:] l, double[:] a):
     """Cython implementation of the logistic function."""
     cdef int i, n
     cdef double xk = 0.0
@@ -80,6 +77,7 @@ cpdef double log_prior(double [:] l, double[:] a):
     prior_p = 1.0 / (1.0 + exp(-xk))
     return prior_p
 
+
 def d2_fun(f, x, h=1e-5):
     """Symmetric second derivative function for log-likelihood.
 
@@ -87,14 +85,17 @@ def d2_fun(f, x, h=1e-5):
     """
     return (f(x+h) - 2*f(x) + f(x-h)) / (h**2)
 
+
 cpdef double var_loglik(int ref_reads, int alt_reads, double f, double eps=1e-3):
     """Calculate the likelihood of the underlying reads given the allele frequency."""
     cdef double ref_logll, alt_logll
     ref_logll = ref_reads * log(f**eps + (1 - f)*(1 - eps))
-    alt_logll = alt_reads * log(f * (1 - eps) + (1 - f)**eps  + eps)
+    alt_logll = alt_reads * log(f * (1 - eps) + (1 - f)**eps + eps)
     return ref_logll + alt_logll
 
-cpdef double posterior_poly(long[:] ax, long[:] rx,  double[:] lambdas, double[:] anno, double alpha, double eps=1e-3):
+cpdef double posterior_poly(long[:] ax, long[:] rx,
+        double[:] lambdas, double[:] anno,
+        double alpha, double eps=1e-3):
     """Calculate the posterior probability of germline polymorphism."""
     cdef double denom, num
     cdef double pi0_k
@@ -104,7 +105,6 @@ cpdef double posterior_poly(long[:] ax, long[:] rx,  double[:] lambdas, double[:
     denom = logaddexp(log(pi0_k) + p_het, log(1.0 - pi0_k) + p_somatic)
     num = log(pi0_k) + p_het
     return num - denom
-
 
 # cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
 #     # NOTE: could we simply evaluate this at the MLE VAF estimate to lower the complexity?
