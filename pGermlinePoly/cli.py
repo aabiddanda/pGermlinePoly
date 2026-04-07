@@ -38,7 +38,7 @@ logging.basicConfig(
     "-c",
     required=True,
     type=click.Path(exists=True),
-    help="Input config file detailing clone structure.",
+    help="Input config file detailing clonal structure.",
 )
 @click.option(
     "--nthreads",
@@ -82,14 +82,6 @@ logging.basicConfig(
     help="Frequentist likelihood ratio test testing deviation from germline heterozygote.",
 )
 @click.option(
-    "--vaf",
-    required=False,
-    default=False,
-    is_flag=True,
-    type=bool,
-    help="Estimate the variant allele frequency.",
-)
-@click.option(
     "--mutect2",
     required=False,
     default=False,
@@ -113,7 +105,7 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
-def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, mutect2, betabinomial, out):
+def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, out):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
     config = validate_config(config)
@@ -126,37 +118,36 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, mutect2, betabinomia
     check_annotations(cur_vcf, annotations=annotations)
     logging.info(f"Finished VCF checks on {vcf}!")
     logging.info("Extracting data for inference...")
+    # NOTE: we might not need an actual germline state ...
     germline_vcf = VCF(vcf, samples=config["germline"], threads=nthreads)
     germline_anno = create_germline_anno_gl(germline_vcf)
     clonal_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
-    clone_pl = create_clonal_pl_matrix(clonal_vcf)
+    clone_reads = create_read_matrix(clonal_vcf)
     anno_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
     anno = create_anno(anno_vcf, annotations=annotations)
-    # this is a little strange in terms of dimensions here ...
+    # NOTE: this might be skipped in case no germline is provided ...
     full_anno = np.vstack([germline_anno, anno]).T
     logging.info("Finished extracting data for inference!")
 
-    p_germline = ProbGermline(X=clone_pl, Theta=full_anno)
+    p_germline = ProbGermline(X=clone_reads, Theta=full_anno)
     logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
     if naive:
         logging.info("Starting Numerical MLE estimation!")
-        a0_hat, lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
+        lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
         logging.info("Finished Numerical MLE estimation!")
-
     else:
         logging.info("Starting EM-algorithm...")
-        loglls, a0_hats, lambdas_hats = p_germline.em_algo(
+        loglls, lambdas_hats = p_germline.em_algo(
             algo=algo,
             delta_logll=eps,
         )
-        a0_hat = a0_hats[-1]
         lambdas_hat = lambda_hats[-1]
         logging.info("Finished EM-algorithm!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
-    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat, a0=a0_hat)
-    if lrt or vaf:
-        logging.info("Estimating of VAF and likelihood ratio ...")
+    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
+    if lrt:
+        logging.info("Estimating the naive likelihood ratio ...")
         mle_p, logll_p, ci_mle_p = p_germline.est_vaf_CI()
         loglik_ratio = p_germline.loglik_ratio(logll_p=logll_p)
         logging.info("Finished estimation of VAF and likelihood ratio!")
@@ -174,15 +165,15 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, mutect2, betabinomia
             "Description": "Log posterior probability of germline polymorphism.",
         }
     )
-    if lrt or vaf:
-        out_vcf.add_info_to_header(
-            {
-                "ID": "mleVAF",
-                "Number": 1,
-                "Type": "String",
-                "Description": "MLE estimate of variant allele frequency and 95% CI.",
-            }
-        )
+    out_vcf.add_info_to_header(
+        {
+            "ID": "mleVAF",
+            "Number": 1,
+            "Type": "String",
+            "Description": "MLE estimate of variant allele frequency and 95% CI.",
+        }
+    )
+    if lrt:
         out_vcf.add_info_to_header(
             {
                 "ID": "lrtGermlinePoly",
@@ -204,7 +195,7 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, vaf, mutect2, betabinomia
         out_vcf.add_to_header(f"##lambda_{a}={l}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
-    if lrt or vaf:
+    if lrt:
         for pp_gp, lrt, vaf, vaf_low, vaf_high, v in tqdm(
             zip(
                 pp_germline_poly,

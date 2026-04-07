@@ -106,18 +106,20 @@ class ProbGermline:
 
         Uses the fisher information to account for heterogeneous sequencing depth.
         """
+        assert h > 0
+        assert (alpha > 0) and (alpha < 1)
         if self.vaf is None:
             self.mle_vaf()
         ci_mle_p = np.zeros(shape=(self.M, 3))
         z_crit = norm.ppf(alpha / 2)
-        for v in self.vaf:
+        for i, v in enumerate(self.vaf):
             ax, rx = self.X[i, :, 0].sum(), self.X[i, :, 1].sum()
-            ll = lambda p: var_loglik(ax, rx, f=p, **kwargs)
+            ll = lambda p: var_loglik(ax, rx, f=p, **kwargs)  # noqa
             # Take the negative of the expectation of the second derivative ...
-            fisher_I_inv = 1.0 / -d2_fun(ll, mle_p[k], h=h)
-            ci_mle_p[k, 0] = v - z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
-            ci_mle_p[k, 1] = v
-            ci_mle_p[k, 2] = v + z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
+            fisher_I_inv = 1.0 / -d2_fun(ll, v, h=h)
+            ci_mle_p[i, 0] = v - z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
+            ci_mle_p[i, 1] = v
+            ci_mle_p[i, 2] = v + z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
         return ci_mle_p
 
     # def complete_logll(
