@@ -3,14 +3,14 @@
 import numpy as np
 import yaml
 from cerberus import Validator
-from poly_utils import logsumexp
+from poly_utils import geno_loglik
 from tqdm import tqdm
 
 germline_schema = {
     "ind": {"required": True, "type": "string"},
     "sex": {"required": True, "type": "string", "maxlength": 1, "allowed": ["M", "F"]},
     "age": {"required": True, "type": "number", "min": 0.0},
-    "germline": {"required": True, "type": "list", "schema": {"type": "string"}},
+    "germline": {"required": False, "type": "list", "schema": {"type": "string"}},
     "clones": {"required": True, "type": "list", "schema": {"type": "string"}},
     "annotations": {"required": True, "type": "list"},
 }
@@ -37,45 +37,18 @@ def check_annotations(vcf, annotations=["PL", "AD"]):
         assert vcf.contains(a)
 
 
-def invert_pl(pl):
-    """Invert the PL field to a normalized genotype log-likelihood."""
-    pl = np.array(pl)
-    assert np.all(pl >= 0)
-    assert pl.ndim == 1
-    assert pl.size > 1
-    p_gt = pl / -10.0
-    p_gt = np.nan_to_num(p_gt)
-    p_gt /= np.log10(np.e)
-    p_gt = p_gt - logsumexp(p_gt)
-    return p_gt
-
-
-def create_germline_anno_gl(vcf):
-    """Create the germline annotation for the clonal sequencing data.
-
-    NOTE: currently this method only considers biallelic SNVs in the annotation model.
-    NOTE: this can support more than one germline sample if available as well to improve inference.
-    """
-    assert vcf.contains("PL")
-    germline_log_ratio = []
+def create_germline_anno(vcf, **kwargs):
+    """Create the germline annotation from allele depths."""
+    assert vcf.contains("AD")
+    germline_anno = []
     for v in tqdm(vcf):
         if v.is_snp and (len(v.ALT) == 1):
-            x = v.format("PL")
-            if x.ndim == 1:
-                pl_x = invert_pl(x)
-                poly_lrr = logsumexp(pl_x[1:-1]) - logsumexp(pl_x[[0, -1]])
-                germline_log_ratio.append(poly_lrr)
-            else:
-                poly_lrr = np.zeros(x.shape[0])
-                for i in range(x.shape[0]):
-                    pl_x = invert_pl(x[i])
-                    poly_lrr[i] = logsumexp(pl_x[1:-1]) - logsumexp(pl_x[[0, -1]])
-                germline_log_ratio.append(np.mean(poly_lrr))
-        else:
-            germline_log_ratio.append(np.nan)
-    germline_log_ratio = np.array(germline_log_ratio, dtype=np.float32)
-    assert germline_log_ratio.ndim == 1
-    return germline_log_ratio
+            x = v.format("AD")
+            assert x.ndim == 2
+            gl = geno_loglik(x[0][1], x[0][0], **kwargs)
+            germline_anno.append(gl[1])
+    germline_anno = np.array(germline_anno).astype(np.float64)
+    return germline_anno
 
 
 def create_anno(vcf, annotations=[]):

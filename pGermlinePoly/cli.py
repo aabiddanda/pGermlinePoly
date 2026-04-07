@@ -4,7 +4,6 @@ import logging
 
 import rich_click as click
 from cyvcf2 import VCF, Writer
-from tqdm import tqdm
 
 from pGermlinePoly import ProbGermline
 from pGermlinePoly.io import (
@@ -118,9 +117,10 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     check_annotations(cur_vcf, annotations=annotations)
     logging.info(f"Finished VCF checks on {vcf}!")
     logging.info("Extracting data for inference...")
-    # NOTE: we might not need an actual germline state ...
-    germline_vcf = VCF(vcf, samples=config["germline"], threads=nthreads)
-    germline_anno = create_germline_anno_gl(germline_vcf)
+    # NOTE: we should not require a germline sample
+    if "germline" in config:
+        germline_vcf = VCF(vcf, samples=config["germline"], threads=nthreads)
+        germline_anno = create_germline_anno_gl(germline_vcf)
     clonal_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
     clone_reads = create_read_matrix(clonal_vcf)
     anno_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
@@ -155,6 +155,10 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
         logging.info("Estimating LOD Score under the Mutect2 Model ...")
         # TODO: do something here ...
         logging.info("Estimated LOD under Mutect2 model!")
+    if betabinomial:
+        logging.info("Estimating rho for Beta-Binomial overdispersion ...")
+        # TODO: finish this model here ...
+        logging.info("Estimated rho for Beta-Binomial overdispersion!")
     logging.info(f"Writing annotated VCF output to {out} ...")
     out_vcf = VCF(vcf, samples=samples, threads=nthreads)
     out_vcf.add_info_to_header(
@@ -191,28 +195,52 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
                 "Description": "LOD Score from Mutect.",
             }
         )
+    if betabinomial:
+        out_vcf.add_info_to_header(
+            {
+                "ID": "rhobeta",
+                "Number": 1,
+                "Type": "Float",
+                "Description": "Beta-Binomial overdispersion from Spencer-Chapman et al.",
+            }
+        )
     for a, l in zip(["germline"] + config["annotations"], lambdas_hat):
         out_vcf.add_to_header(f"##lambda_{a}={l}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
-    if lrt:
-        for pp_gp, lrt, vaf, vaf_low, vaf_high, v in tqdm(
-            zip(
-                pp_germline_poly,
-                loglik_ratio,
-                mle_p,
-                ci_mle_p[:, 0],
-                ci_mle_p[:, 2],
-                out_vcf,
-            )
-        ):
-            v.INFO["ppGermlinePoly"] = pp_gp
-            v.INFO["mleVAF"] = f"{max(vaf_low, 0.0)}:{vaf}:{min(vaf_high, 1.0)}"
-            v.INFO["lrtGermlinePoly"] = lrt
-            write_vcf.write_record(v)
-    else:
-        for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
-            v.INFO["ppGermlinePoly"] = pp_gp
-            write_vcf.write_record(v)
+    # if lrt and mutect2:
+    #     for pp_gp, lrt, vaf, vaf_low, vaf_high, v in tqdm(
+    #         zip(
+    #             pp_germline_poly,
+    #             loglik_ratio,
+    #             mle_p,
+    #             ci_mle_p[:, 0],
+    #             ci_mle_p[:, 2],
+    #             out_vcf,
+    #         )
+    #     ):
+    #         v.INFO["ppGermlinePoly"] = pp_gp
+    #         v.INFO["mleVAF"] = f"{max(vaf_low, 0.0)}:{vaf}:{min(vaf_high, 1.0)}"
+    #         v.INFO["lrtGermlinePoly"] = lrt
+    #         write_vcf.write_record(v)
+    # elif lrt:
+    #     for pp_gp, lrt, vaf, vaf_low, vaf_high, v in tqdm(
+    #         zip(
+    #             pp_germline_poly,
+    #             loglik_ratio,
+    #             mle_p,
+    #             ci_mle_p[:, 0],
+    #             ci_mle_p[:, 2],
+    #             out_vcf,
+    #         )
+    #     ):
+    #         v.INFO["ppGermlinePoly"] = pp_gp
+    #         v.INFO["mleVAF"] = f"{max(vaf_low, 0.0)}:{vaf}:{min(vaf_high, 1.0)}"
+    #         v.INFO["lrtGermlinePoly"] = lrt
+    #         write_vcf.write_record(v)
+    # else:
+    #     for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
+    #         v.INFO["ppGermlinePoly"] = pp_gp
+    #         write_vcf.write_record(v)
     write_vcf.close()
     logging.info(f"Wrote annotated VCF output to {out}!")
