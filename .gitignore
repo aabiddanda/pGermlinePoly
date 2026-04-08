@@ -25,3 +25,5 @@ docs/_build/
 *.blg
 *.dvi
 *.xdv
+pytest-coverage.txt
+pytest.xml

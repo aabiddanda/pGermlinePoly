@@ -1,7 +1,7 @@
 [![CI](https://github.com/aabiddanda/pGermlinePoly/actions/workflows/python-package.yml/badge.svg)](https://github.com/aabiddanda/pGermlinePoly/actions/workflows/python-package.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-<!-- [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff) -->
+[![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 # pGermlinePoly
 
@@ -11,14 +11,13 @@ The model is flexible to account for a number of annotations that can be informa
 
 ## Installation
 
-Currently the package is installable via a local `pip install` using the following:
+Currently the package is installable via `pip` using the following command:
 
 ```
-git clone git@github.com:aabiddanda/pGermlinePoly.git
-cd pGermlinePoly pip install .
+pip install git+https://github.com/aabiddanda/pGermlinePoly.git
 ```
 
-Following this installation, you should be able to run either `pytest` to run the core unit tests for all of the functions in the library as well as testing out the two commandline executables detailed below.
+We highly recommend installing `pGermlinePoly` within a standalone environment (e.g., using [`uv`](https://docs.astral.sh/uv/)) Following this installation, you should be able to run either `pytest` to run the core unit tests for all of the functions in the library as well as testing out the two commandline executables detailed below.
 
 ## Running `pGermlinePoly`
 
