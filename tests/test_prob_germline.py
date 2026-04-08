@@ -2,12 +2,6 @@ import numpy as np
 import pytest
 
 from pGermlinePoly import ProbGermline
-# from pGermlinePoly.io import (
-#     create_anno,
-#     create_clonal_pl_matrix,
-#     create_germline_anno_gl,
-#     invert_pl,
-# )
 
 # The second variant should definitely have some contribution
 X = np.array(

@@ -60,7 +60,7 @@ def create_anno(vcf, annotations=[]):
         else:
             anno = [np.nan for a in annotations]
         total_anno.append(anno)
-    return np.vstack(total_anno).T
+    return np.vstack(total_anno)
 
 
 def create_read_matrix(vcf):

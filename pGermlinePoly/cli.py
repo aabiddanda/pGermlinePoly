@@ -5,12 +5,12 @@ import logging
 import rich_click as click
 from cyvcf2 import VCF, Writer
 
-from pGermlinePoly import ProbGermline
+from pGermlinePoly import ProbGermline, MutectLOD, BetaOverdispersion
 from pGermlinePoly.io import (
     validate_config,
     check_samples,
     check_annotations,
-    create_germline_anno_gl,
+    create_germline_anno,
 )
 
 # Setup the logging configuration for the CLI
@@ -116,22 +116,35 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     check_samples(cur_vcf, samples=samples)
     check_annotations(cur_vcf, annotations=annotations)
     logging.info(f"Finished VCF checks on {vcf}!")
-    logging.info("Extracting data for inference...")
-    # NOTE: we should not require a germline sample
-    if "germline" in config:
-        germline_vcf = VCF(vcf, samples=config["germline"], threads=nthreads)
-        germline_anno = create_germline_anno_gl(germline_vcf)
+    logging.info(f"Extracting read data from {vcf} for inference...")
     clonal_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
     clone_reads = create_read_matrix(clonal_vcf)
+    logging.info(
+        f"Extracted read data from {vcf} across {len(config['clones'])} clones!"
+    )
+
+    logging.info(f"Extracting annotation data for inference from {vcf}...")
     anno_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
     anno = create_anno(anno_vcf, annotations=annotations)
-    # NOTE: this might be skipped in case no germline is provided ...
-    full_anno = np.vstack([germline_anno, anno]).T
-    logging.info("Finished extracting data for inference!")
+    logging.info(f"Extracted annotation data from {vcf} across {len(annotations)}")
+    if "germline" in config:
+        # NOTE: this could be provided as an alternative VCF as well ...
+        logging.info(f"Extracting germline annotation from {vcf} for inference...")
+        germline_vcf = VCF(vcf, samples=config["germline"], threads=nthreads)
+        germline_anno = create_germline_anno(germline_vcf)
+        logging.info(f"Extracted germline annotation from {vcf} for inference...")
+        full_anno = np.vstack([germline_anno, anno]).T
+    else:
+        full_anno = anno
+    logging.info("Finished extracting clonal data for inference!")
 
     p_germline = ProbGermline(X=clone_reads, Theta=full_anno)
     logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
+    logging.info("Finished imputing missing annotations!")
+    logging.info("Estimating Naive VAF from pooled reads...")
+    p_germline.mle_vaf()
+    logging.info("Finished VAF estimation from pooled reads!")
     if naive:
         logging.info("Starting Numerical MLE estimation!")
         lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
@@ -154,10 +167,12 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     if mutect2:
         logging.info("Estimating LOD Score under the Mutect2 Model ...")
         # TODO: do something here ...
+        mutect_lod = MutectLOD(X=clone_reads)
         logging.info("Estimated LOD under Mutect2 model!")
     if betabinomial:
         logging.info("Estimating rho for Beta-Binomial overdispersion ...")
-        # TODO: finish this model here ...
+        beta_disp = BetaOverdispersion(X=clone_reads)
+        rhos = beta_disp.estimate_rhos()
         logging.info("Estimated rho for Beta-Binomial overdispersion!")
     logging.info(f"Writing annotated VCF output to {out} ...")
     out_vcf = VCF(vcf, samples=samples, threads=nthreads)

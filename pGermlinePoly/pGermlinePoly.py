@@ -122,33 +122,32 @@ class ProbGermline:
             ci_mle_p[i, 2] = v + z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
         return ci_mle_p
 
-    # def complete_logll(
-    #     self, lambdas=np.array([0.0, 0.0], dtype="double"), a0=5.0, npts=20
-    # ):
-    #     """Compute the complete data log-likelihood.
+    def complete_logll(
+        self, lambdas=np.array([0.0, 0.0], dtype="double"), a0=5.0, npts=20
+    ):
+        """Compute the complete data log-likelihood.
 
-    #     Arguments:
-    #         - lambdas (`np.array`): weight parameters for logistic priors.
-    #         - a0 (`float`): the parameter for the beta distribution
-    #         - npts (`int`): the number of points to evaluate the likelihood
+        Arguments:
+            - lambdas (`np.array`): weight parameters for logistic priors.
+            - npts (`int`): the number of points to evaluate the likelihood
 
-    #     Returns:
-    #         - logll (`float`): approximate log-likelihood of the model.
+        Returns:
+            - logll (`float`): approximate log-likelihood of the model.
 
-    #     """
-    #     assert lambdas.size == self.A
-    #     assert npts > 2
-    #     assert a0 > 1.0
-    #     logll = complete_loglik(
-    #         K=self.K,
-    #         J=self.J,
-    #         lambdas=lambdas,
-    #         Theta=self.Theta,
-    #         X=self.X,
-    #         a0=a0,
-    #         npts=npts,
-    #     )
-    #     return logll
+        """
+        assert lambdas.size == self.A
+        assert npts > 2
+        assert a0 > 1.0
+        logll = complete_loglik(
+            K=self.K,
+            J=self.J,
+            lambdas=lambdas,
+            Theta=self.Theta,
+            X=self.X,
+            a0=a0,
+            npts=npts,
+        )
+        return logll
 
     # def naive_mle(self, algo="L-BFGS-B", npts=20, disp=False):
     #     """Naive optimization of the model log-likelihood.
@@ -239,38 +238,55 @@ class MutectLOD:
         Arguments:
             - X (`np.array`): a M x K x 2 matrix of read counts
         """
+        assert X.ndim == 3
+        if X.shape[2] != 2:
+            raise ValueError("Only biallelic variants are tolerated here ...")
         self.X = X
+        self.M, self.J, _ = X.shape
+        self.p_germline = None
+        self.lod = None
 
     def lod_scores(self, q=30.0):
         """Compute the mutect likelihood of a germline vs. somatic variant."""
         # NOTE: Q should be a per-variant-call readout ...
+        assert q > 0
         m = self.X.shape[0]
-        lod_scores = np.zeros(shape=(m, 3))
+        ll_scores = np.zeros(shape=(m, 3))
+        eps = 10 ** (-q / 10.0)
+        assert (eps > 0) and (eps < 1)
         for i in range(m):
-            # Obtain the MLE estimate of the alternative allele frequency
-            mle_f = self.X[i, :, 1].sum() / self.X[i, :, :].sum()
             alt_reads = self.X[i, :, 1].sum()
             ref_reads = self.X[i, :, 0].sum()
-            lod_m0 = var_loglik(alt_reads, ref_reads, f=0.0, q=q)
-            lod_mf = var_loglik(alt_reads, ref_reads, f=mle_f, q=q)
-            lod_germline = var_loglik(alt_reads, ref_reads, f=0.5, q=q)
-            lod_scores[i, 0] = lod_m0
-            lod_scores[i, 1] = lod_mf
-            lod_scores[i, 2] = lod_germline
-        self.lod = lod_scores
+            mle_f = alt_reads / (alt_reads + ref_reads)
+            ll_m0 = var_loglik(alt_reads, ref_reads, f=0.0, eps=eps)
+            ll_mf = var_loglik(alt_reads, ref_reads, f=mle_f, eps=eps)
+            ll_germline = var_loglik(alt_reads, ref_reads, f=0.5, eps=eps)
+            ll_scores[i, 0] = ll_m0
+            ll_scores[i, 1] = ll_mf
+            ll_scores[i, 2] = ll_germline
+        self.lod = ll_scores
 
-    def infer_germline_weights(self, germline_anno, annos):
-        """Infer MLE estimates for the germline contributions."""
-        assert self.lod is not None
-        raise NotImplementedError("LOD Scores under the mutect model is not ready yet!")
+    def est_germline_prior(self, anno):
+        """Compute the priors based on dbSNP-like annotation ..."""
+        assert anno.size == self.M
+        self.p_germline = np.ones(self.M) * 5e-5
+        # NOTE: we can set t
+        raise NotImplementedError("Setting binary priors is not currently implemented")
 
-    def lod_germline(self, germline_anno, annos):
-        """Compute posterior LOD score using the germline annotation."""
-        raise NotImplementedError("LOD Scores under the mutect model is not ready yet!")
-
-    def lod_variant(self):
+    def lod_germline(self, p_somatic=3e-6, p_germline=0.095):
         """Compute posterior LOD score of being a germline variant."""
-        raise NotImplementedError("LOD Scores under the mutect model is not ready yet!")
+        assert self.lod is not None
+        assert (p_somatic > 0) and (p_somatic < 1)
+        assert (p_germline > 0) and (p_germline < 1)
+        if self.p_germline is None:
+            # NOTE: should have some kind of warning here ...
+            self.p_germline = np.ones(self.M) * p_germline
+        # NOTE: original var_loglik is in base e, so have to convert here ...
+        lod_germline = (self.lod[:, 1] + np.log(p_somatic)) - (
+            self.lod[:, 2] + np.log(self.p_germline)
+        )
+        lod_germline = lod_germline / np.log(10)
+        self.lod_germline = lod_germline
 
 
 class BetaOverdispersion:

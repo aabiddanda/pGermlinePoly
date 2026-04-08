@@ -24,6 +24,17 @@ annotations:
   - MLEAF
 """
 
+no_germline_config = """
+ind: JH214UJ
+age: 50
+sex: M
+clones:
+  - JH214UJG11
+  - JH214UJG2
+annotations:
+  - MLEAF
+"""
+
 no_anno_config = """
 ind: JH214UJ
 age: 50
@@ -89,12 +100,10 @@ def test_valid_config_strings(tmp_path):
     """Testing valid configurations."""
     d = tmp_path / "valid"
     d.mkdir()
-    p1 = d / "hello.yaml"
-    p1.write_text(good_config)
-    validate_config(p1)
-    p2 = d / "hello2.yaml"
-    p2.write_text(no_anno_config)
-    validate_config(p2)
+    for c_str in [good_config, no_germline_config, no_anno_config]:
+        p1 = d / "hello.yaml"
+        p1.write_text(c_str)
+        validate_config(p1)
 
 
 def test_bad_config_strings(tmp_path):
@@ -265,3 +274,4 @@ def test_create_anno(tmp_path):
     annotations = config["annotations"]
     germline_vcf = VCF(vcf_fp, samples=samples)
     anno = create_anno(germline_vcf, annotations=annotations)
+    assert anno.ndim == 2

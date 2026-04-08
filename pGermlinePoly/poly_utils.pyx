@@ -106,6 +106,18 @@ cpdef double posterior_poly(long[:] ax, long[:] rx,
     num = log(pi0_k) + p_het
     return num - denom
 
+cpdef double complete_loglik(double[:, :, :] X, double[:, :] A, double[:] lambdas):
+    """Compute the complete log-likelihood """
+    cdef int m
+    cdef double pi0
+    cdef double logll = 0.0
+    M = X.shape[0]
+    for m in range(M):
+        pi0 = log_prior(lambdas, A[m, :])
+        logll += log(pi0)
+    # NOTE: this is not fully implemented yet ...
+    return logll
+
 # cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
 #     # NOTE: could we simply evaluate this at the MLE VAF estimate to lower the complexity?
 #     cdef int k,j,p
@@ -172,8 +184,8 @@ cdef double geno_gl(int alt_reads, int tot_reads, int a1=0, int a2=0, double q=3
     """
     cdef int i
     cdef float eps, gl
-    assert a1 in [0,1]
-    assert a2 in [0,1]
+    assert a1 in [0, 1]
+    assert a2 in [0, 1]
     assert q > 0
     eps = 10**(-q/10.0)
     gl = 0.0
