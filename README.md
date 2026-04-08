@@ -1,8 +1,13 @@
+[![CI](https://github.com/aabiddanda/pGermlinePoly/actions/workflows/python-package.yml/badge.svg)](https://github.com/aabiddanda/pGermlinePoly/actions/workflows/python-package.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<!-- [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff) -->
+
 # pGermlinePoly
-Bayesian model to estimate posterior probability of germline polymorphism in somatic sequencing data.
 
-The model is flexible to account for a number of annotations that can be informative of distinguishing a true germline variant from an underlying somatic variant (e.g. global allele frequency & germline genotype likelihood). The underlying EM-algorithm estimates weights of how each annotation contributes to the probability of being a true germline polymorphism. After maximum-likelihood estimation of these parameters, the posterior probability of each variant is obtained.
+`pGermlinePoly` is a Bayesian model to estimate the posterior probability of germline polymorphism in somatic sequencing data.
 
+The model is flexible to account for a number of annotations that can be informative of distinguishing a true germline variant from an underlying somatic variant (e.g. global allele frequency). The underlying EM-algorithm estimates weights of how each annotation contributes to the probability of being a true germline polymorphism. After maximum-likelihood estimation of these parameters, the posterior probability of each variant is obtained.
 
 ## Installation
 
