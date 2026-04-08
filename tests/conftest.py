@@ -8,7 +8,7 @@ def sim_read_counts(m=100, j=20, coverage=30, p_somatic=0.0, seed=42):
     assert j > 1
     assert coverage > 0
     np.random.seed(seed)
-    X = np.zeros((m, j, 2))
+    X = np.zeros((m, j, 2), dtype="int")
     for i in range(m):
         n_i = np.random.poisson(coverage, size=j)
         a_i = np.random.binomial(n=n_i, p=0.5)

@@ -1,18 +1,8 @@
 import numpy as np
 import pytest
+from conftest import sim_read_counts, sim_annotations
 
 from pGermlinePoly import ProbGermline
-
-# The second variant should definitely have some contribution
-X = np.array(
-    [
-        [[2, 3], [3, 4]],
-        [[1, 0], [8, 8]],
-        [[3, 3], [5, 5]],
-    ],
-    dtype="int",
-)
-Theta = np.array([[2.0, 0.0], [0.0, 0.1], [1.1, np.nan]], dtype="double")
 
 
 @pytest.mark.parametrize("m,j,a", [(10, 4, 2)])
@@ -41,15 +31,27 @@ def test_impute_anno():
     assert prob_germline.Theta[5, 1] == 0
 
 
-@pytest.mark.parametrize("X,A", [(X, Theta)])
-def test_est_vaf(X, A):
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_est_vaf(m, j, c, a):
+    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
     prob_germline.mle_vaf()
+    assert np.all(prob_germline.vaf >= 0)
+    assert np.all(prob_germline.vaf <= 1.0)
 
 
-@pytest.mark.parametrize("X,A", [(X, Theta)])
-def test_llr_het(X, A):
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_llr_het(m, j, c, a):
+    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
     prob_germline.mle_vaf()
@@ -57,16 +59,26 @@ def test_llr_het(X, A):
     assert llrs.size == prob_germline.M
 
 
-@pytest.mark.parametrize("X,A", [(X, Theta)])
-def test_prior_poly(X, A):
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_prior_poly(m, j, c, a):
+    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
     pp = prob_germline.prior_poly(lambdas=np.zeros(A.shape[1]))
     assert np.all(pp >= 0.0) and np.all(pp <= 1.0)
 
 
-@pytest.mark.parametrize("X,A", [(X, Theta)])
-def test_posterior_prob_poly(X, A):
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30, 50])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_posterior_prob_poly(m, j, c, a):
+    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
     prob_germline.mle_vaf()

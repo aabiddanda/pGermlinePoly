@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-
+from conftest import sim_read_counts
 from pGermlinePoly import BetaOverdispersion, ClonalSim
 
 # The second variant should have a high-overdispersion
@@ -15,22 +15,24 @@ X = np.array(
 
 @pytest.mark.parametrize("m,j", [(10, 4)])
 def test_initialization(m, j):
-    """Test that the intialization of the class will go well."""
+    """Test initialization of the class."""
     X = np.zeros(shape=(m, j, 2), dtype=np.uint8)
     betaoverdisp = BetaOverdispersion(X=X)
     assert betaoverdisp.J == j
     assert betaoverdisp.M == m
 
 
-@pytest.mark.parametrize("X", [X])
-def test_rhos(X):
-    """Test that the intialization of the class will go well."""
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+def test_rhos_germline(m, j, c):
+    """Test estimation of rhos."""
+    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     betaoverdisp = BetaOverdispersion(X=X)
     rhos = betaoverdisp.estimate_rhos()
     assert rhos.ndim == 1
     assert rhos.size == X.shape[0]
-    if rhos.size == 2:
-        assert rhos[1] >= rhos[0]
+    assert np.all(rhos <= 0.1)
 
 
 def test_betabinom_from_sim():
