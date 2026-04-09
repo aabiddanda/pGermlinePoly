@@ -113,8 +113,8 @@ cpdef double complete_loglik(long[:, :, :] X, double[:, :] A, double[:] lambdas,
     M = X.shape[0]
     for m in range(M):
         pi0 = log_prior(lambdas, A[m, :])
-        p_het = logprob_het(X[m,:,1], X[m,:,0])
-        p_somatic = logprob_somatic(X[m,:,1], X[m,:,0], alpha[m], eps)
+        p_het = logprob_het(X[m, :, 1], X[m, :, 0])
+        p_somatic = logprob_somatic(X[m, :, 1], X[m, :, 0], alpha[m], eps)
         logll += logaddexp(pi0 + p_het, log1p(-exp(pi0)) + p_somatic)
     return logll
 

@@ -7,6 +7,7 @@ from poly_utils import (
     log_prior,
     var_loglik,
     geno_loglik,
+    complete_loglik,
     posterior_poly,
     d2_fun,
 )
@@ -122,30 +123,18 @@ class ProbGermline:
             ci_mle_p[i, 2] = v + z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
         return ci_mle_p
 
-    def complete_logll(
-        self, lambdas=np.array([0.0, 0.0], dtype="double"), a0=5.0, npts=20
-    ):
+    def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double"), **kwargs):
         """Compute the complete data log-likelihood.
 
         Arguments:
             - lambdas (`np.array`): weight parameters for logistic priors.
-            - npts (`int`): the number of points to evaluate the likelihood
-
         Returns:
-            - logll (`float`): approximate log-likelihood of the model.
+            - logll (`float`): log-likelihood of the model.
 
         """
         assert lambdas.size == self.A
-        assert npts > 2
-        assert a0 > 1.0
         logll = complete_loglik(
-            K=self.K,
-            J=self.J,
-            lambdas=lambdas,
-            Theta=self.Theta,
-            X=self.X,
-            a0=a0,
-            npts=npts,
+            X=self.X, A=self.Theta, lambdas=lambdas, alpha=self.vaf, **kwargs
         )
         return logll
 

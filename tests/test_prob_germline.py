@@ -108,3 +108,19 @@ def test_posterior_prob_even():
     pp = prob_germline.post_prob_poly(lambdas=np.zeros(A.shape[1]))
     assert pp.size == X.shape[0]
     assert np.all(pp == pp[0])
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30, 50])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_complete_logll(m, j, c, a):
+    """Test the computational of the likelihood of the observed data given lambdas."""
+    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    lambdas = np.zeros(a)
+    logll = prob_germline.complete_logll(lambdas=lambdas)
+    assert logll <= 0
