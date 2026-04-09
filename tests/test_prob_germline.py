@@ -69,7 +69,9 @@ def test_prior_poly(m, j, c, a):
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
     pp = prob_germline.prior_poly(lambdas=np.zeros(A.shape[1]))
-    assert np.all(pp >= 0.0) and np.all(pp <= 1.0)
+    assert np.all(pp <= 0.0)
+    assert pp.ndim == 1
+    assert pp.size == m
 
 
 @pytest.mark.parametrize("m", [10, 50, 100])
@@ -83,7 +85,9 @@ def test_posterior_prob_poly(m, j, c, a):
     prob_germline.impute_anno()
     prob_germline.mle_vaf()
     pp = prob_germline.post_prob_poly(lambdas=np.zeros(A.shape[1]))
-    assert np.all(pp < 0.0)
+    assert np.all(pp <= 0.0)
+    assert pp.ndim == 1
+    assert pp.size == m
 
 
 def test_posterior_prob_even():

@@ -73,8 +73,7 @@ cpdef double log_prior(double[:] l, double[:] a):
     n = l.size
     for i in range(0, n):
         xk += l[i]*a[i]
-    # NOTE: this should be in log-space to be more numerically consistent ...
-    prior_p = 1.0 / (1.0 + exp(-xk))
+    prior_p = -log1p(exp(-xk))
     return prior_p
 
 
@@ -102,38 +101,22 @@ cpdef double posterior_poly(long[:] ax, long[:] rx,
     pi0_k = log_prior(lambdas, anno)
     p_somatic = logprob_somatic(ax, rx, alpha, eps)
     p_het = logprob_het(ax, rx)
-    denom = logaddexp(log(pi0_k) + p_het, log(1.0 - pi0_k) + p_somatic)
-    num = log(pi0_k) + p_het
+    denom = logaddexp(pi0_k + p_het, log1p(-exp(pi0_k)) + p_somatic)
+    num = pi0_k + p_het
     return num - denom
 
-cpdef double complete_loglik(double[:, :, :] X, double[:, :] A, double[:] lambdas):
-    """Compute the complete log-likelihood """
+cpdef double complete_loglik(long[:, :, :] X, double[:, :] A, double[:] lambdas, double[:] alpha, double eps=1e-3):
+    """Compute the complete data log-likelihood."""
     cdef int m
     cdef double pi0
     cdef double logll = 0.0
     M = X.shape[0]
     for m in range(M):
         pi0 = log_prior(lambdas, A[m, :])
-        logll += log(pi0)
-    # NOTE: this is not fully implemented yet ...
+        p_het = logprob_het(X[m,:,1], X[m,:,0])
+        p_somatic = logprob_somatic(X[m,:,1], X[m,:,0], alpha[m], eps)
+        logll += logaddexp(pi0 + p_het, log1p(-exp(pi0)) + p_somatic)
     return logll
-
-# cpdef double complete_loglik(int K, int J, double[:] lambdas, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
-#     # NOTE: could we simply evaluate this at the MLE VAF estimate to lower the complexity?
-#     cdef int k,j,p
-#     cdef double logll = 0.0
-#     cdef double pi0_k
-#     cdef double[:] x0 = np.zeros(npts)
-#     cdef double[:] x1 = np.zeros(npts)
-#     cdef double[:] ps = np.linspace(0, 1, npts)
-#     for k in range(K):
-#         pi0_k = log_prior(lambdas, Theta[k,:])
-#         for p in range(npts):
-#             x0[p] = beta_logpdf(ps[p], a=a0, b=a0) + single_var_logll(J=J, X=X[k,:,:], p=ps[p])
-#             x1[p] = beta_logpdf(ps[p], a=1.0, b=1.0) + single_var_logll(J=J, X=X[k,:,:], p=ps[p])
-#         logll += logaddexp(log(pi0_k) + logsumexp(x0), log(1.0 - pi0_k) + logsumexp(x1))
-#     return logll
-
 
 # cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
 #     """Cython helper function for computing the incomplete log-likelihood.
