@@ -118,24 +118,17 @@ cpdef double complete_loglik(long[:, :, :] X, double[:, :] A, double[:] lambdas,
         logll += logaddexp(pi0 + p_het, log1p(-exp(pi0)) + p_somatic)
     return logll
 
-# cpdef double incomplete_loglik(int K, int J, double[:] lambdas, double[:] gammas_k, double[:,:] Theta, double[:,:,:] X, int npts=20, double a0=10):
-#     """Cython helper function for computing the incomplete log-likelihood.
-#     """
-#     cdef double logll = 0.0
-#     cdef double pi0_k
-#     cdef int k, j, p
-#     cdef double[:] x0 = np.zeros(npts)
-#     cdef double[:] x1 = np.zeros(npts)
-#     cdef double[:] ps = np.linspace(0, 1, npts)
-#     for k in range(K):
-#         pi0_k = log_prior(lambdas, Theta[k,:])
-#         for p in range(npts):
-#             x0[p] = beta_logpdf(ps[p], a=a0, b=a0) + single_var_logll(J=J, X=X[k,:,:], p=ps[p])
-#             x1[p] = beta_logpdf(ps[p], a=1.0, b=1.0) + single_var_logll(J=J, X=X[k,:,:], p=ps[p])
-#         # This should add to the incomplete log-l
-#         logll += exp(gammas_k[k]) * (log(pi0_k) + logsumexp(x0)) + (1.0 - exp(gammas_k[k])) * (log(1.0 - pi0_k) + logsumexp(x1))
-#     return logll
-
+cpdef double incomplete_loglik(long[:, :, :] X, double[:, :] A, double[:] lambdas, double[:] gammas, double[:] alpha, double eps=1e-3):
+    """Compute the incomplete log-likelihood."""
+    cdef double logll, pi0
+    cdef int m
+    M = X.shape[0]
+    for k in range(M):
+        pi0 = log_prior(lambdas, A[m, :])
+        p_het = logprob_het(X[m, :, 1], X[m, :, 0])
+        p_somatic = logprob_somatic(X[m, :, 1], X[m, :, 0], alpha[m], eps)
+        logll += exp(gammas[m]) * (pi0 + p_het) + (1.0 - exp(gammas[m])) * (log1p(-exp(pi0)) + p_somatic)
+    return logll
 
 cdef double[:] phred_rescale(double[:] raw_gl):
     """Perform phred-based rescaling of the genotype likelihoods."""

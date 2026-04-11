@@ -2,12 +2,14 @@
 
 import msprime
 import numpy as np
+import warnings
 from poly_utils import (
     loglik_ratio,
     log_prior,
     var_loglik,
     geno_loglik,
     complete_loglik,
+    incomplete_loglik,
     posterior_poly,
     d2_fun,
 )
@@ -155,62 +157,60 @@ class ProbGermline:
             lambda x: -self.complete_logll(lambdas=x),
             x0=np.zeros(self.A),
             method=algo,
-            bounds=[(-10, 10) for _ in range(self.A)],
+            bounds=[(-20, 20) for _ in range(self.A)],
             **kwargs,
         )
         lambda_hat = opt_res.x
         return lambda_hat
 
-    # def opt_lambdas(self, gammas_k, algo="L-BFGS-B"):
-    #     """Optimize the lambda parameter weights in the M-step of the EM-algorithm."""
-    #     assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
-    #     opt_res = minimize(
-    #         lambda x: -self.incomplete_logll(gammas_k=gammas_k, lambdas=x[1:], a0=x[0]),
-    #         x0=np.array([3.0] + [0.0 for _ in range(self.A)], dtype="double"),
-    #         method=algo,
-    #         bounds=[(0, 50)] + [(-20.0, 20.0) for _ in range(self.A)],
-    #         tol=1e-8,
-    #         options={"disp": False},
-    #     )
-    #     a0_hat = opt_res.x[0]
-    #     lambda_hat = opt_res.x[1:]
-    #     return a0_hat, lambda_hat
+    def em_algo(
+        self,
+        lambdas=np.array([0.0, 0.0], dtype="double"),
+        algo="L-BFGS-B",
+        delta_logll=1e-4,
+        log=True,
+        **kwargs,
+    ):
+        """EM-algorithm to estimate parameters for prior of germline polymorphism.
 
-    # def em_algo(
-    #     self,
-    #     lambdas=np.array([0.0, 0.0], dtype="double"),
-    #     a0=5.0,
-    #     algo="L-BFGS-B",
-    #     delta_logll=1e-6,
-    #     log=True,
-    # ):
-    #     """EM-algorithm to estimate parameters for prior of germline polymorphism.
+        Arguments:
+            - lambdas (`np.array`): starting weights for annotations
+            - a0 (`float`): starting float
 
-    #     Arguments:
-    #         - lambdas (`np.array`): starting weights for annotations
-    #         - a0 (`float`): starting float
-
-    #     """
-    #     assert lambdas.size == self.A
-    #     lambdas_prev = lambdas
-    #     a0_prev = a0
-    #     loglls = []
-    #     loglls.append(self.complete_logll(lambdas=lambdas_prev))
-    #     cur_delta = 1e9
-    #     while cur_delta >= delta_logll:
-    #         # E-step: estimate the expected probability using prev params
-    #         gammas_k = self.post_prob_poly(lambdas=lambdas_prev)
-    #         # M-step: maximize the parameters
-    #         a0_hat, lambdas_hat = self.opt_lambdas(gammas_k=gammas_k, algo=algo)
-    #         loglls.append(self.complete_logll(lambdas=lambdas_hat, a0=a0_hat))
-    #         if log:
-    #             logging.info(f"Log-likelihood {loglls[-1]}, Lambdas: {lambdas_hat}")
-    #         if loglls[-1] >= loglls[-2]:
-    #             warnings.warn("Incomplete log-likelihood is not increasing!")
-    #         cur_delta = np.abs(loglls[-1] - loglls[-2])
-    #         lambdas_prev = lambdas_hat
-    #         a0_prev = a0_hat
-    #     return np.array(loglls), a0_prev, lambdas_prev
+        """
+        assert lambdas.size == self.A
+        lambdas_prev = lambdas
+        loglls = []
+        loglls.append(self.complete_logll(lambdas=lambdas_prev))
+        cur_delta = 1e9
+        while cur_delta >= delta_logll:
+            # E-step: estimate the expected probability using prev params
+            gammas = self.post_prob_poly(lambdas=lambdas_prev)
+            # M-step: maximize the parameters
+            opt_res = minimize(
+                lambda x: (
+                    -incomplete_loglik(
+                        X=self.X,
+                        A=self.Theta,
+                        lambdas=x,
+                        alpha=self.vaf,
+                        gammas=gammas,
+                        **kwargs,
+                    )
+                ),
+                x0=np.zeros(self.A),
+                method=algo,
+                bounds=[(-20.0, 20.0) for _ in range(self.A)],
+                tol=1e-8,
+                options={"disp": False},
+            )
+            lambdas_hat = opt_res.x
+            loglls.append(self.complete_logll(lambdas=lambdas_hat))
+            if loglls[-1] >= loglls[-2]:
+                warnings.warn("Incomplete log-likelihood is not increasing!")
+            cur_delta = np.abs(loglls[-1] - loglls[-2])
+            lambdas_prev = lambdas_hat
+        return np.array(loglls), lambdas_prev
 
 
 class MutectLOD:

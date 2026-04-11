@@ -124,3 +124,40 @@ def test_complete_logll(m, j, c, a):
     lambdas = np.zeros(a)
     logll = prob_germline.complete_logll(lambdas=lambdas)
     assert logll <= 0
+
+
+@pytest.mark.parametrize("m", [10, 50, 1000])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30, 50])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_infer_weights(m, j, c, a):
+    """Test a naive optimization of the weights for all SNPs."""
+    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    lambdas_hat = prob_germline.naive_mle()
+    lambdas = np.zeros(a)
+    logll_null = prob_germline.complete_logll(lambdas=lambdas)
+    logll_mle = prob_germline.complete_logll(lambdas=lambdas_hat)
+    assert logll_mle > logll_null
+
+
+@pytest.mark.parametrize("m", [10, 50, 1000])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30, 50])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_em_algo(m, j, c, a):
+    """Test a naive optimization of the weights for all SNPs."""
+    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    lambdas = np.zeros(a)
+    _, lambdas_hat = prob_germline.em_algo(lambdas=lambdas)
+    logll_null = prob_germline.complete_logll(lambdas=lambdas)
+    logll_mle = prob_germline.complete_logll(lambdas=lambdas_hat)
+    assert logll_mle > logll_null
+
