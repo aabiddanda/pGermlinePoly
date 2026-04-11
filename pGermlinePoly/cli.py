@@ -3,6 +3,8 @@
 import logging
 
 import rich_click as click
+import numpy as np
+from tqdm import tqdm
 from cyvcf2 import VCF, Writer
 
 from pGermlinePoly import ProbGermline, MutectLOD, BetaOverdispersion
@@ -11,6 +13,8 @@ from pGermlinePoly.io import (
     check_samples,
     check_annotations,
     create_germline_anno,
+    create_anno,
+    create_read_matrix,
 )
 
 # Setup the logging configuration for the CLI
@@ -147,27 +151,27 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     logging.info("Finished VAF estimation from pooled reads!")
     if naive:
         logging.info("Starting Numerical MLE estimation!")
-        lambdas_hat = p_germline.naive_mle(algo=algo, disp=(out != "-"))
+        lambdas_hat = p_germline.naive_mle(
+            algo=algo, tol=1e-4, options={"disp": (out != "-")}
+        )
         logging.info("Finished Numerical MLE estimation!")
     else:
         logging.info("Starting EM-algorithm...")
-        loglls, lambdas_hats = p_germline.em_algo(
-            algo=algo,
-            delta_logll=eps,
-        )
-        lambdas_hat = lambda_hats[-1]
+        # TODO: need to implement an EM algorithm setup ...
         logging.info("Finished EM-algorithm!")
+    logging.info("Estimating MLE VAF ...")
+    mle_p, logll_p, ci_mle_p = p_germline.est_vaf_CI()
+    logging.info("Finished estimating MLE VAF!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
     pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
     if lrt:
         logging.info("Estimating the naive likelihood ratio ...")
-        mle_p, logll_p, ci_mle_p = p_germline.est_vaf_CI()
         loglik_ratio = p_germline.loglik_ratio(logll_p=logll_p)
         logging.info("Finished estimation of VAF and likelihood ratio!")
     if mutect2:
         logging.info("Estimating LOD Score under the Mutect2 Model ...")
-        # TODO: do something here ...
         mutect_lod = MutectLOD(X=clone_reads)
+        mutect_lod.lod_germline()
         logging.info("Estimated LOD under Mutect2 model!")
     if betabinomial:
         logging.info("Estimating rho for Beta-Binomial overdispersion ...")
@@ -219,43 +223,25 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
                 "Description": "Beta-Binomial overdispersion from Spencer-Chapman et al.",
             }
         )
-    for a, l in zip(["germline"] + config["annotations"], lambdas_hat):
-        out_vcf.add_to_header(f"##lambda_{a}={l}")
+    if "germline" in config:
+        for a, lhat in zip(["germline"] + config["annotations"], lambdas_hat):
+            out_vcf.add_to_header(f"##lambda_{a}={lhat}")
+    else:
+        for a, lhat in zip(config["annotations"], lambdas_hat):
+            out_vcf.add_to_header(f"##lambda_{a}={lhat}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
-    # if lrt and mutect2:
-    #     for pp_gp, lrt, vaf, vaf_low, vaf_high, v in tqdm(
-    #         zip(
-    #             pp_germline_poly,
-    #             loglik_ratio,
-    #             mle_p,
-    #             ci_mle_p[:, 0],
-    #             ci_mle_p[:, 2],
-    #             out_vcf,
-    #         )
-    #     ):
-    #         v.INFO["ppGermlinePoly"] = pp_gp
-    #         v.INFO["mleVAF"] = f"{max(vaf_low, 0.0)}:{vaf}:{min(vaf_high, 1.0)}"
-    #         v.INFO["lrtGermlinePoly"] = lrt
-    #         write_vcf.write_record(v)
-    # elif lrt:
-    #     for pp_gp, lrt, vaf, vaf_low, vaf_high, v in tqdm(
-    #         zip(
-    #             pp_germline_poly,
-    #             loglik_ratio,
-    #             mle_p,
-    #             ci_mle_p[:, 0],
-    #             ci_mle_p[:, 2],
-    #             out_vcf,
-    #         )
-    #     ):
-    #         v.INFO["ppGermlinePoly"] = pp_gp
-    #         v.INFO["mleVAF"] = f"{max(vaf_low, 0.0)}:{vaf}:{min(vaf_high, 1.0)}"
-    #         v.INFO["lrtGermlinePoly"] = lrt
-    #         write_vcf.write_record(v)
-    # else:
-    #     for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
-    #         v.INFO["ppGermlinePoly"] = pp_gp
-    #         write_vcf.write_record(v)
+    i = 0
+    for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
+        v.INFO["ppGermlinePoly"] = pp_gp
+        v.INFO["mleVAF"] = f"{ci_mle_p[i, 0]}:{mle_p[i]}:{ci_mle_p[i, 2]}"
+        if lrt:
+            v.INFO["lrtGermlinePoly"] = loglik_ratio[i]
+        if mutect2:
+            v.INFO["lodMutect"] = mutect_lod.lod_germline[i]
+        if betabinomial:
+            v.INFO["rhobeta"] = rhos[i]
+        write_vcf.write_record(v)
+        i += 1
     write_vcf.close()
     logging.info(f"Wrote annotated VCF output to {out}!")

@@ -16,23 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Python
-        run: uv python install
-        with:
-          python-version-file: "pyproject.toml"
-
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install
 
       - name: Install package and test dependencies
         run: uv pip install ".[tests]"
 
       - name: Test with pytest
         run: |
-          pytest --junitxml=pytest.xml --cov=.venv/lib/python3.12/site-packages/pGermlinePoly -n 4 --cov-report=term-missing:skip-covered --cov-config=pyproject.toml --import-mode=importlib | tee pytest-coverage.txt
-
-      - name: Pytest coverage comment
-        uses: MishaKav/pytest-coverage-comment@v1
-        with:
-          pytest-coverage-path: ./pytest-coverage.txt
-          junitxml-path: ./pytest.xml
+          pytest -n 4 --verbose

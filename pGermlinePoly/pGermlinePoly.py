@@ -11,7 +11,7 @@ from poly_utils import (
     posterior_poly,
     d2_fun,
 )
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize, minimize_scalar
 from scipy.stats import beta, binom, betabinom, norm, poisson, uniform
 
 
@@ -52,7 +52,6 @@ class ProbGermline:
         logll_p = np.zeros(self.M)
         for i in range(self.M):
             ax, rx = self.X[i, :, 0].sum(), self.X[i, :, 1].sum()
-            # Is this the actual MLE?
             mle_p[i] = ax / (ax + rx)
             logll_p[i] = var_loglik(ax, rx, f=mle_p[i], **kwargs)
         self.vaf = mle_p
@@ -138,33 +137,29 @@ class ProbGermline:
         )
         return logll
 
-    # def naive_mle(self, algo="L-BFGS-B", npts=20, disp=False):
-    #     """Naive optimization of the model log-likelihood.
+    def naive_mle(self, algo="L-BFGS-B", **kwargs):
+        """Naive optimization of the model log-likelihood.
 
-    #     NOTE: this is not recommended for large models and largely is implemented for testing.
+        NOTE: this is not recommended for large models and largely is implemented for testing.
 
-    #     Arguments:
-    #         - algo (`string`): Type of optimization algorithm for likelihood.
-    #         - npts (`int`): the number of points to evaluate the likelihood
+        Arguments:
+            - algo (`string`): Type of optimization algorithm for likelihood.
 
-    #     Returns:
-    #         - a0_hat (`float`): approximate log-likelihood of the model.
-    #         - lambda_hat (`np.array`): weight parameters for priors
+        Returns:
+            - a0_hat (`float`): approximate log-likelihood of the model.
+            - lambda_hat (`np.array`): weight parameters for priors
 
-    #     """
-    #     assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
-    #     opt_res = minimize(
-    #         lambda x: -self.complete_logll(lambdas=x[1:], a0=x[0], npts=npts),
-    #         x0=np.array([3.0] + [0.0 for _ in range(self.A)], dtype="double"),
-    #         method=algo,
-    #         bounds=[(0, 50)] + [(-20.0, 20.0) for _ in range(self.A)],
-    #         tol=1e-8,
-    #         options={"disp": disp},
-    #     )
-    #     est_hat = opt_res.x
-    #     a0_hat = est_hat[0]
-    #     lambda_hat = est_hat[1:]
-    #     return a0_hat, lambda_hat
+        """
+        assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
+        opt_res = minimize(
+            lambda x: -self.complete_logll(lambdas=x),
+            x0=np.zeros(self.A),
+            method=algo,
+            bounds=[(-10, 10) for _ in range(self.A)],
+            **kwargs,
+        )
+        lambda_hat = opt_res.x
+        return lambda_hat
 
     # def opt_lambdas(self, gammas_k, algo="L-BFGS-B"):
     #     """Optimize the lambda parameter weights in the M-step of the EM-algorithm."""
