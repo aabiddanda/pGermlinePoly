@@ -47,14 +47,24 @@ class ProbGermline:
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
-    def mle_vaf(self, **kwargs):
+    def mle_vaf(self, naive=True, eps=1e-3, **kwargs):
         """Estimate VAF using maximum-likelihood across all samples."""
         mle_p = np.zeros(self.M)
         logll_p = np.zeros(self.M)
-        for i in range(self.M):
-            ax, rx = self.X[i, :, 1].sum(), self.X[i, :, 0].sum()
-            mle_p[i] = ax / (ax + rx)
-            logll_p[i] = var_loglik(ax, rx, f=mle_p[i], **kwargs)
+        if naive:
+            for i in range(self.M):
+                ax, rx = self.X[i, :, 1].sum(), self.X[i, :, 0].sum()
+                mle_p[i] = ax / (ax + rx)
+                logll_p[i] = var_loglik(ax, rx, f=mle_p[i], eps=eps)
+        else:
+            for i in range(self.M):
+                ax, rx = self.X[i, :, 1].sum(), self.X[i, :, 0].sum()
+                opt_res = minimize_scalar(
+                    lambda p: -var_loglik(ax, rx, f=p, eps=eps),
+                    bounds=(0.0, 1.0),
+                )
+                mle_p[i] = opt_res.x
+                logll_p[i] = var_loglik(ax, rx, f=mle_p[i], eps=eps)
         self.vaf = mle_p
         self.logl_vaf = logll_p
 
