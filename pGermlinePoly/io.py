@@ -67,7 +67,7 @@ def create_read_matrix(vcf):
     """
     Create a matrix of read-counts from clonal samples.
 
-    The resulting matrix is a K x J x 2 matrix with the read-counts averaged across all clonal samples.
+    The resulting matrix is a M x J x 2 matrix with the read-counts averaged across all clonal samples.
     """
     assert vcf.contains("AD")
     assert len(vcf.samples) > 1

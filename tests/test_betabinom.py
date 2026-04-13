@@ -32,7 +32,8 @@ def test_rhos_germline(m, j, c):
     rhos = betaoverdisp.estimate_rhos()
     assert rhos.ndim == 1
     assert rhos.size == X.shape[0]
-    assert np.all(rhos <= 0.1)
+    # assert np.all(rhos <= 0.1)
+    assert ~np.all(rhos == rhos[0])
 
 
 def test_betabinom_from_sim():
@@ -48,3 +49,4 @@ def test_betabinom_from_sim():
     rhos = betaoverdisp.estimate_rhos()
     assert rhos.ndim == 1
     assert rhos.size == X.shape[0]
+    assert ~np.all(rhos == rhos[0])

@@ -11,10 +11,9 @@ from poly_utils import (
     complete_loglik,
     incomplete_loglik,
     posterior_poly,
-    d2_fun,
 )
-from scipy.optimize import minimize, minimize_scalar
-from scipy.stats import beta, binom, betabinom, norm, poisson, uniform
+from scipy.optimize import minimize, minimize_scalar, brentq
+from scipy.stats import beta, binom, betabinom, chi2, norm, poisson, uniform
 
 
 class ProbGermline:
@@ -53,7 +52,7 @@ class ProbGermline:
         mle_p = np.zeros(self.M)
         logll_p = np.zeros(self.M)
         for i in range(self.M):
-            ax, rx = self.X[i, :, 0].sum(), self.X[i, :, 1].sum()
+            ax, rx = self.X[i, :, 1].sum(), self.X[i, :, 0].sum()
             mle_p[i] = ax / (ax + rx)
             logll_p[i] = var_loglik(ax, rx, f=mle_p[i], **kwargs)
         self.vaf = mle_p
@@ -66,7 +65,7 @@ class ProbGermline:
         llr = np.zeros(self.M)
         for i in range(self.M):
             llr[i] = loglik_ratio(
-                ax=self.X[i, :, 0], rx=self.X[i, :, 1], alpha=self.vaf[i], **kwargs
+                ax=self.X[i, :, 1], rx=self.X[i, :, 0], alpha=self.vaf[i], **kwargs
             )
         return llr
 
@@ -104,25 +103,39 @@ class ProbGermline:
             )
         return post_k
 
-    def est_vaf_CI(self, h=1e-5, alpha=0.05, **kwargs):
+    def est_vaf_CI(self, alpha=0.05, df=1, **kwargs):
         """Estimate the variant allele frequency from likelihoods across all the clonal data.
 
         Uses the fisher information to account for heterogeneous sequencing depth.
+
+        We should be using profile-likelihood instead ...
         """
-        assert h > 0
         assert (alpha > 0) and (alpha < 1)
+        assert df > 0
         if self.vaf is None:
             self.mle_vaf()
         ci_mle_p = np.zeros(shape=(self.M, 3))
-        z_crit = norm.ppf(alpha / 2)
+        qval = chi2.ppf(alpha, df=df)
         for i, v in enumerate(self.vaf):
-            ax, rx = self.X[i, :, 0].sum(), self.X[i, :, 1].sum()
-            ll = lambda p: var_loglik(ax, rx, f=p, **kwargs)  # noqa
-            # Take the negative of the expectation of the second derivative ...
-            fisher_I_inv = 1.0 / -d2_fun(ll, v, h=h)
-            ci_mle_p[i, 0] = v - z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
+            ax, rx = self.X[i, :, 1].sum(), self.X[i, :, 0].sum()
+            wilks = lambda p: (
+                2
+                * (
+                    var_loglik(ax, rx, f=v, **kwargs)
+                    - var_loglik(ax, rx, f=p, **kwargs)
+                )
+            )  # noqa
+            try:
+                lower_CI = brentq(lambda x: wilks(x) - qval, 1e-6, v)
+            except ValueError:
+                lower_CI = 0.0
+            try:
+                upper_CI = brentq(lambda x: wilks(x) - qval, v, 1.0)
+            except ValueError:
+                upper_CI = 1.0
+            ci_mle_p[i, 0] = lower_CI
             ci_mle_p[i, 1] = v
-            ci_mle_p[i, 2] = v + z_crit * np.sqrt(1.0 / self.J * fisher_I_inv)
+            ci_mle_p[i, 2] = upper_CI
         return ci_mle_p
 
     def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double"), **kwargs):
@@ -295,18 +308,18 @@ class BetaOverdispersion:
         rhos = np.zeros(m)
         for i in range(m):
             phat = self.X[i, :, 1].sum() / self.X[i, :, :].sum()
-            alt_reads = self.X[i, :, 1].sum()
-            ref_reads = self.X[i, :, 0].sum()
+            alt_reads = self.X[i, :, 1]
+            ref_reads = self.X[i, :, 0]
             opt_rho = minimize_scalar(
                 lambda x: (
                     -betabinom.logpmf(
                         alt_reads,
                         alt_reads + ref_reads,
                         a=phat * (1 - x) / x,
-                        b=(1 - phat) * (1 - x) / x,
-                    )
+                        b=(1.0 - phat) * (1 - x) / x,
+                    ).sum()
                 ),
-                bounds=(1e-6, 1 - 1e-6),
+                bounds=(1e-20, 1 - 1e-20),
             ).x
             rhos[i] = opt_rho
         return rhos
