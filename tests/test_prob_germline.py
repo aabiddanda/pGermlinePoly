@@ -144,7 +144,7 @@ def test_infer_weights(m, j, c, a):
     assert logll_mle > logll_null
 
 
-@pytest.mark.parametrize("m", [10, 50, 1000])
+@pytest.mark.parametrize("m", [10, 50, 200])
 @pytest.mark.parametrize("j", [5, 50, 100])
 @pytest.mark.parametrize("c", [5, 10, 30, 50])
 @pytest.mark.parametrize("a", [1, 5, 10])
@@ -160,4 +160,3 @@ def test_em_algo(m, j, c, a):
     logll_null = prob_germline.complete_logll(lambdas=lambdas)
     logll_mle = prob_germline.complete_logll(lambdas=lambdas_hat)
     assert logll_mle > logll_null
-

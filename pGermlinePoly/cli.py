@@ -114,7 +114,7 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     config = validate_config(config)
     logging.info("Finished config structure check!")
     logging.info(f"Starting VCF checks on {vcf}...")
-    samples = config["germline"] + config["clones"]
+    samples = config["clones"]
     annotations = config["annotations"]
     cur_vcf = VCF(vcf, samples=samples)
     check_samples(cur_vcf, samples=samples)
@@ -126,7 +126,6 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     logging.info(
         f"Extracted read data from {vcf} across {len(config['clones'])} clones!"
     )
-
     logging.info(f"Extracting annotation data for inference from {vcf}...")
     anno_vcf = VCF(vcf, samples=config["clones"], threads=nthreads)
     anno = create_anno(anno_vcf, annotations=annotations)
@@ -152,21 +151,21 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     if naive:
         logging.info("Starting Numerical MLE estimation!")
         lambdas_hat = p_germline.naive_mle(
-            algo=algo, tol=1e-4, options={"disp": (out != "-")}
+            algo=algo, eps=eps, tol=1e-4, options={"disp": (out != "-")}
         )
         logging.info("Finished Numerical MLE estimation!")
     else:
         logging.info("Starting EM-algorithm...")
-        # TODO: need to implement an EM algorithm setup ...
+        raise NotImplementedError("EM-algorithm is currently not setup!")
         logging.info("Finished EM-algorithm!")
     logging.info("Estimating MLE VAF ...")
-    mle_p, logll_p, ci_mle_p = p_germline.est_vaf_CI()
+    ci_mle_p = p_germline.est_vaf_CI()
     logging.info("Finished estimating MLE VAF!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
-    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat)
+    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat, eps=eps)
     if lrt:
         logging.info("Estimating the naive likelihood ratio ...")
-        loglik_ratio = p_germline.loglik_ratio(logll_p=logll_p)
+        loglik_ratio = p_germline.loglik_ratio_het(eps=eps)
         logging.info("Finished estimation of VAF and likelihood ratio!")
     if mutect2:
         logging.info("Estimating LOD Score under the Mutect2 Model ...")
@@ -234,7 +233,7 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     i = 0
     for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
         v.INFO["ppGermlinePoly"] = pp_gp
-        v.INFO["mleVAF"] = f"{ci_mle_p[i, 0]}:{mle_p[i]}:{ci_mle_p[i, 2]}"
+        v.INFO["mleVAF"] = f"{ci_mle_p[i, 0]}:{ci_mle_p[i, 1]}:{ci_mle_p[i, 2]}"
         if lrt:
             v.INFO["lrtGermlinePoly"] = loglik_ratio[i]
         if mutect2:

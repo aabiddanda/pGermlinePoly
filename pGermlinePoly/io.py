@@ -81,5 +81,5 @@ def create_read_matrix(vcf):
         else:
             # NOTE: this could be replaced with nans as well...
             X.append(np.zeros(shape=(len(vcf.samples), 2)))
-    X = np.stack(X)
+    X = np.stack(X).astype(dtype="int")
     return X

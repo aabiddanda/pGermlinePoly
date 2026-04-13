@@ -79,7 +79,7 @@ class ProbGermline:
             pi_k[i] = log_prior(lambdas, self.Theta[i, :])
         return pi_k
 
-    def post_prob_poly(self, lambdas=np.array([0.0, 0.0], dtype="double")):
+    def post_prob_poly(self, lambdas=np.array([0.0, 0.0], dtype="double"), **kwargs):
         """Posterior probability of being germline polymorphic.
 
         Arguments:
@@ -100,6 +100,7 @@ class ProbGermline:
                 lambdas=lambdas,
                 anno=self.Theta[i, :],
                 alpha=self.vaf[i],
+                **kwargs,
             )
         return post_k
 
@@ -139,7 +140,7 @@ class ProbGermline:
         )
         return logll
 
-    def naive_mle(self, algo="L-BFGS-B", **kwargs):
+    def naive_mle(self, eps=1e-3, algo="L-BFGS-B", **kwargs):
         """Naive optimization of the model log-likelihood.
 
         NOTE: this is not recommended for large models and largely is implemented for testing.
@@ -154,7 +155,7 @@ class ProbGermline:
         """
         assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
         opt_res = minimize(
-            lambda x: -self.complete_logll(lambdas=x),
+            lambda x: -self.complete_logll(lambdas=x, eps=eps),
             x0=np.zeros(self.A),
             method=algo,
             bounds=[(-20, 20) for _ in range(self.A)],
@@ -686,7 +687,7 @@ class ClonalSim:
                 tot_gq += gq
                 cur_dp.append(dp)
             # Setting the info string here ...
-            info_str = f"AC={cur_nalt}AF={cur_nalt / cur_nonmissing}AN={cur_nonmissing}DP={np.mean(cur_dp)}ExternalAF={external_af}SM=0"
+            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};ExternalAF={external_af};SM=0"
             # Collapsing all of this into string output for this VCF record ...
             cur_var_str = (
                 "\t".join(
@@ -741,7 +742,7 @@ class ClonalSim:
                 tot_gq += gq
                 cur_dp.append(dp)
             # Setting the info string here ...
-            info_str = f"AC={cur_nalt}AF={cur_nalt / cur_nonmissing}AN={cur_nonmissing}DP={np.mean(cur_dp)}ExternalAF={external_af}SM=1"
+            info_str = f"AC={cur_nalt};AF={cur_nalt / cur_nonmissing};AN={cur_nonmissing};DP={np.mean(cur_dp)};ExternalAF={external_af};SM=1"
             # Collapsing all of this into string output for this VCF record ...
             cur_var_str = (
                 "\t".join(

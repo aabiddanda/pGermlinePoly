@@ -176,7 +176,6 @@ def main(
     logging.info(
         f"Simulating germline variants with {mean_germline_cov} ({sd_germline_cov}) coverage ..."
     )
-    # NOTE: we currently don't really support AFS input or an estimated heterozygosity rate for scaling ...
     clone_sim.simulate_germline(
         afs=[afs_alpha, afs_beta],
         het_rate=germline_het,
@@ -230,7 +229,7 @@ def main(
             sex="M",
             germline=["Agermline"],
             clones=[f"Aclone{i}" for i in range(nclones)],
-            annotations=["ExternalAF", "DP"],
+            annotations=["ExternalAF"],
         )
         with open(out_config, "w") as outfile:
             yaml.dump(data, outfile, default_flow_style=False)
