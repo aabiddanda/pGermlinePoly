@@ -116,16 +116,14 @@ class ProbGermline:
     def est_vaf_CI(self, alpha=0.05, df=1, **kwargs):
         """Estimate the variant allele frequency from likelihoods across all the clonal data.
 
-        Uses the fisher information to account for heterogeneous sequencing depth.
-
-        We should be using profile-likelihood instead ...
+        Uses the Wilks approximation to the profile-likelihood CI construction.
         """
         assert (alpha > 0) and (alpha < 1)
         assert df > 0
         if self.vaf is None:
             self.mle_vaf()
         ci_mle_p = np.zeros(shape=(self.M, 3))
-        qval = chi2.ppf(alpha, df=df)
+        qval = chi2.ppf(1. - alpha, df=df)
         for i, v in enumerate(self.vaf):
             ax, rx = self.X[i, :, 1].sum(), self.X[i, :, 0].sum()
             wilks = lambda p: (

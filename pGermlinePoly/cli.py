@@ -34,7 +34,14 @@ logging.basicConfig(
     "-v",
     required=True,
     type=click.Path(exists=True),
-    help="Input VCF file.",
+    help="Input VCF file for all clones.",
+)
+@click.option(
+    "--germline_vcf",
+    "-g",
+    required=False,
+    type=click.Path(exists=True),
+    help="Input VCF for germline sample.",
 )
 @click.option(
     "--config",
@@ -72,9 +79,9 @@ logging.basicConfig(
     "--eps",
     "-e",
     required=False,
-    default=1e-4,
+    default=1e-3,
     type=float,
-    help="Stopping criteria for log-likelihood changes in the EM-algorithm",
+    help="Error rate for read-level alleles.",
 )
 @click.option(
     "--lrt",
@@ -108,7 +115,9 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
-def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, out):
+def main(
+    vcf, germ_vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, out
+):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
     config = validate_config(config)
@@ -131,15 +140,18 @@ def main(vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, ou
     anno = create_anno(anno_vcf, annotations=annotations)
     logging.info(f"Extracted annotation data from {vcf} across {len(annotations)}")
     if "germline" in config:
+        assert germline_vcf is not None
         # NOTE: this could be provided as an alternative VCF as well ...
-        logging.info(f"Extracting germline annotation from {vcf} for inference...")
-        germline_vcf = VCF(vcf, samples=config["germline"], threads=nthreads)
-        germline_anno = create_germline_anno(germline_vcf)
-        logging.info(f"Extracted germline annotation from {vcf} for inference...")
+        logging.info(
+            f"Extracting germline annotation from {germline_vcf} for inference..."
+        )
+        check_samples(germline_vcf, samples=config["germline"])
+        germ_vcf = VCF(germline_vcf, samples=config["germline"], threads=nthreads)
+        germline_anno = create_germline_anno(germ_vcf)
+        logging.info(f"Extracted germline annotation from {vcf} for inference!")
         full_anno = np.vstack([germline_anno, anno]).T
     else:
         full_anno = anno
-    logging.info("Finished extracting clonal data for inference!")
 
     p_germline = ProbGermline(X=clone_reads, Theta=full_anno)
     logging.info("Imputing missing annotations...")
