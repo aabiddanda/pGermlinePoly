@@ -55,15 +55,15 @@ cpdef double logprob_somatic(long[:] ax, long[:] rx, double alpha, double eps=1e
     j = ax.size
     ll = 0
     for i in range(0, j):
-        ll += logaddexp(alpha*logbinomial(ax[i], rx[i], p=0.5),
-            (1 - alpha)*logbinomial(ax[i], rx[i], p=eps))
+        ll += logaddexp(log(alpha)+logbinomial(ax[i], rx[i], p=0.5),
+            log(1 - alpha)+logbinomial(ax[i], rx[i], p=eps))
     return ll
 
 cpdef loglik_ratio(long[:] ax, long[:] rx, double alpha, double eps=1e-3):
     """Evaluate the log-likelihood ratio between these two categories."""
     ll_het = logprob_het(ax, rx)
     ll_somatic = logprob_somatic(ax, rx, alpha=alpha, eps=eps)
-    return 2*(ll_het - ll_somatic)
+    return 2*(ll_somatic - ll_het)
 
 cpdef double log_prior(double[:] l, double[:] a):
     """Cython implementation of the logistic function."""
@@ -76,11 +76,11 @@ cpdef double log_prior(double[:] l, double[:] a):
     prior_p = -log1p(exp(-xk))
     return prior_p
 
-cpdef double var_loglik(int ref_reads, int alt_reads, double f, double eps=1e-3):
-    """Calculate the likelihood of the underlying reads given the allele frequency."""
+cpdef double var_loglik(int alt_reads, int ref_reads, double f, double eps=1e-3):
+    """Calculate the likelihood of the underlying reads given VAF."""
     cdef double ref_logll, alt_logll
-    ref_logll = ref_reads * log(f**eps + (1 - f)*(1 - eps))
-    alt_logll = alt_reads * log(f * (1 - eps) + (1 - f)**eps + eps)
+    ref_logll = ref_reads * log(f*eps + (1 - f)*(1 - eps))
+    alt_logll = alt_reads * log(f * (1 - eps) + (1 - f)*eps)
     return ref_logll + alt_logll
 
 cpdef double posterior_poly(long[:] ax, long[:] rx,

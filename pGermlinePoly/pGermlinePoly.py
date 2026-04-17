@@ -123,7 +123,7 @@ class ProbGermline:
         if self.vaf is None:
             self.mle_vaf()
         ci_mle_p = np.zeros(shape=(self.M, 3))
-        qval = chi2.ppf(1. - alpha, df=df)
+        qval = chi2.ppf(1.0 - alpha, df=df)
         for i, v in enumerate(self.vaf):
             ax, rx = self.X[i, :, 1].sum(), self.X[i, :, 0].sum()
             wilks = lambda p: (
@@ -254,7 +254,6 @@ class MutectLOD:
 
     def lod_scores(self, q=30.0):
         """Compute the mutect likelihood of a germline vs. somatic variant."""
-        # NOTE: Q should be a per-variant-call readout ...
         assert q > 0
         m = self.X.shape[0]
         ll_scores = np.zeros(shape=(m, 3))

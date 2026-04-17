@@ -3,15 +3,6 @@ import pytest
 from conftest import sim_read_counts
 from pGermlinePoly import BetaOverdispersion, ClonalSim
 
-# The second variant should have a high-overdispersion
-X = np.array(
-    [
-        [[5, 5], [5, 5], [5, 5]],
-        [[5, 0], [5, 0], [5, 5]],
-    ],
-    dtype=np.uint8,
-)
-
 
 @pytest.mark.parametrize("m,j", [(10, 4)])
 def test_initialization(m, j):
@@ -27,13 +18,29 @@ def test_initialization(m, j):
 @pytest.mark.parametrize("c", [5, 10, 30])
 def test_rhos_germline(m, j, c):
     """Test estimation of rhos."""
-    X = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     betaoverdisp = BetaOverdispersion(X=X)
     rhos = betaoverdisp.estimate_rhos()
     assert rhos.ndim == 1
     assert rhos.size == X.shape[0]
-    # assert np.all(rhos <= 0.1)
     assert ~np.all(rhos == rhos[0])
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("p", [0.0, 0.1, 0.25])
+@pytest.mark.parametrize("v", [0.05, 0.1, 0.25])
+def test_rhos_somatic(m, j, c, p, v):
+    """Test estimation of rhos."""
+    X, somatic = sim_read_counts(m=m, j=j, coverage=c, p_somatic=p, vaf=v, seed=m + j)
+    betaoverdisp = BetaOverdispersion(X=X)
+    rhos = betaoverdisp.estimate_rhos()
+    assert rhos.ndim == 1
+    assert rhos.size == X.shape[0]
+    assert ~np.all(rhos == rhos[0])
+    if np.sum(somatic) > 0:
+        assert np.mean(rhos[somatic == 1]) > 0.1
 
 
 def test_betabinom_from_sim():

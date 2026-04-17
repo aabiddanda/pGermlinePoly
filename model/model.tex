@@ -40,7 +40,7 @@ We specifically want to model how the germline sample, alongside additional info
 
 \section*{Model}
 
-We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z_k\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote. Considering the likelihood across
+We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z_k\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote. Considering the likelihood across all $J$ samples (assuming independence):
 
 \begin{equation}
 \begin{aligned}
@@ -56,8 +56,7 @@ P(\mathbf{A}_k, \mathbf{R}_k | z_k=\texttt{somatic}) &= \prod_j^J  \alpha \textt
 \end{equation}
 
 
-Where $\alpha$ is the latent variant allele frequency (VAF). One approach may be to simply evaluate the likelihood-ratio between the two hypotheses:
-
+Where $\alpha$ is the number of lineages carrying the somatic mutation (e.g., half of the variant allele frequency (VAF)). One approach may be to simply evaluate the likelihood-ratio between the two hypotheses:
 
 \begin{equation}
 \begin{aligned}
@@ -66,10 +65,9 @@ L(\alpha) &= \frac{P(\mathbf{A}_k, \mathbf{R}_k | z_k=\texttt{somatic})}{P(\math
 \end{aligned}
 \end{equation}
 
-However, there may be a unique opportunity to construct a prior probability distribution which takes advantage of pre-existing annotations to inform on $Z_k$. This
+For the best fitting $\alpha$ to the data. This effectively tests a null hypothesis of $H_0: \alpha = 1$. However, there may be a unique opportunity to construct a prior probability distribution which takes advantage of pre-existing annotations to inform $Z_k$. This can include things like mappability, population allele frequencies and other quantities.
 
 Combining this likelihood definition with prior probabilities ($P(z_k = z)$) leads to a posterior probability for $P(z_k = \texttt{het} | \mathbf{A}_k, \mathbf{R_k})$:
-
 
 \begin{equation}
 \begin{aligned}
@@ -85,38 +83,6 @@ Following this definition, we can also use annotations, $\mathbf{\theta}_k$, to 
 	\pi_{k} &= P(Z_{k} = 1 | \theta_{k}, \Lambda) = \frac{1}{1 + e^{-x_{k}}}
 \end{aligned}
 \end{equation}
-
-
-
-
-
-
-
-
-% $$P(GL | \theta, \Lambda) = \prod_k^K \pi_k P(GL_k| Z_k = 1) + (1 - \pi_k)P(GL_k | Z_k = 0)$$
-% , where each of the $K$ sites are treated as independent realizations of this data generating process. If we empirically estimate $\hat{\alpha}_k$ as the MLE estimate of the VAF (using no prior information), then the total likelihood for the data is:
-
-
-
-% \begin{equation}
-% P(GL | \Lambda, \hat{\alpha}, \epsilon) = \prod^K \pi_k \left(\prod^J \sum_{g \in \{0,1,2\}} P(GL_k | P(G_j = g | Z_k = 1, \epsilon, \alpha_0) \right) + (1 - \pi_k)\left(\prod^J \sum_{g \in \{0,1,2\}} GL_k(g)P(G_j = g | Z_k = 0, \epsilon, \alpha_0) \right)
-% \end{equation}
-
-% Each iteration of this likelihood will take $\mathcal{O}(KJL)$ to compute. We describe some of the pre-computation and tools used for parameter estimation in a subsequent section. With parameters $\hat{\Lambda}, \hat{\alpha_0}, \epsilon$ we can estimate the posterior probability of $Z_k = 1$ as:
-
-% \begin{equation}
-% \begin{aligned}
-% P(Z_k = 1 | GL_k, \theta_k, \Lambda) &= \frac{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \alpha_0, \epsilon)}{P(GL_k|Z_k=1)P(Z_k=1 | \Lambda, \alpha_0,\epsilon) + P(GL_k|Z_k=0)P(Z_k=0 | \Lambda, \alpha_0, \epsilon)}\\
-% &=  \frac{\pi_k P(GL_k|Z_k=1, \alpha_0)}{\pi_k P(GL_k|Z_k=1, \alpha_0, \epsilon) + (1 - \pi_k)P(GL_k|Z_k=0, \alpha_0,\epsilon)}
-% \end{aligned}
-% \end{equation}
-
-% \begin{figure}[H]
-% \begin{center}
-% \includegraphics{figs/pGermlinePoly.model.png}
-% \end{center}
-% \caption{Graphical Model describing the likelihood model. $K$ dictates the number of sites present in gVCF format.}
-% \end{figure}
 
 \subsection*{Computational Methods}
 
@@ -146,8 +112,7 @@ $$
 R | N \sim BetaBinom\left(\hat{p}\frac{1 - \rho}{\rho}, (1 - \hat{p})\frac{1-\rho}{\rho}\right)
 $$
 
-, where $\hat{p}$ is the MLE estimate for the VAF. In the original work\citep{Spencer-Chapman2021-cy}, the proposal was simply to exclude any variant with $\hat{\rho} > 0.1$. This approach works quite well in simulations with fairly even coverage across samples (at the proposed variant in question). In \texttt{pGermlinePoly} we provide this ``pooled overdispersion'' estimator as a secondary annotation under request in case the user would like to incorporate this int oteh fi
-
+, where $\hat{p}$ is the MLE estimate for the VAF. In the original work\citep{Spencer-Chapman2021-cy}, the proposal was simply to exclude any variant with $\hat{\rho} > 0.1$. This approach works quite well in simulations with fairly even coverage across samples (at the proposed variant in question). In \texttt{pGermlinePoly} we provide this ``pooled overdispersion'' estimator as a secondary annotation under request in case the user would like to incorporate this in the future.
 
 \bibliographystyle{unsrt} % We choose the "plain" reference style
 \bibliography{refs} % Entries are in the refs.bib file

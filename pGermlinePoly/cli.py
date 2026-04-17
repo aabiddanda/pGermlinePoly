@@ -116,7 +116,17 @@ logging.basicConfig(
     help="Output VCF file (defaults to stdout)",
 )
 def main(
-    vcf, germ_vcf, config, nthreads, algo, naive, eps, lrt, mutect2, betabinomial, out
+    vcf,
+    germline_vcf,
+    config,
+    nthreads,
+    algo,
+    naive,
+    eps,
+    lrt,
+    mutect2,
+    betabinomial,
+    out,
 ):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
     logging.info("Checking config structure ...")
@@ -182,6 +192,7 @@ def main(
     if mutect2:
         logging.info("Estimating LOD Score under the Mutect2 Model ...")
         mutect_lod = MutectLOD(X=clone_reads)
+        mutect_lod.lod_scores()
         mutect_lod.lod_germline()
         logging.info("Estimated LOD under Mutect2 model!")
     if betabinomial:
