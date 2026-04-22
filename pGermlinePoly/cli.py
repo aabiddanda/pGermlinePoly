@@ -6,6 +6,7 @@ import rich_click as click
 import numpy as np
 from tqdm import tqdm
 from cyvcf2 import VCF, Writer
+import sys
 
 from pGermlinePoly import ProbGermline, MutectLOD, BetaOverdispersion
 from pGermlinePoly.io import (
@@ -251,6 +252,7 @@ def main(
     else:
         for a, lhat in zip(config["annotations"], lambdas_hat):
             out_vcf.add_to_header(f"##lambda_{a}={lhat}")
+    out_vcf.add_to_header(f"##{' '.join(sys.argv)}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
     i = 0

@@ -49,20 +49,6 @@ def test_est_vaf(m, j, c, a):
 @pytest.mark.parametrize("j", [5, 50, 100])
 @pytest.mark.parametrize("c", [5, 10, 30])
 @pytest.mark.parametrize("a", [1, 5, 10])
-def test_est_vaf(m, j, c, a):
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
-    A = sim_annotations(m=m, a=a, seed=m + a)
-    vaf = np.array([X[i, :, 1].sum() / X[i, :, :].sum() for i in range(m)])
-    prob_germline = ProbGermline(X=X, Theta=A)
-    prob_germline.impute_anno()
-    prob_germline.mle_vaf()
-    assert np.all(prob_germline.vaf == vaf)
-
-
-@pytest.mark.parametrize("m", [10, 50, 100])
-@pytest.mark.parametrize("j", [5, 50, 100])
-@pytest.mark.parametrize("c", [5, 10, 30])
-@pytest.mark.parametrize("a", [1, 5, 10])
 def test_est_vaf_nonnaive(m, j, c, a):
     X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
@@ -71,6 +57,7 @@ def test_est_vaf_nonnaive(m, j, c, a):
     prob_germline.impute_anno()
     prob_germline.mle_vaf(naive=False)
     assert ~np.all(prob_germline.vaf == vaf)
+
 
 @pytest.mark.parametrize("m", [10, 50, 100])
 @pytest.mark.parametrize("j", [50, 100])
@@ -86,7 +73,7 @@ def test_vaf_est_all_somatic(m, j, c, a, v):
     assert np.all(prob_germline.vaf > 1e-3)
     prob_germline.mle_vaf(naive=False)
     assert np.all(prob_germline.vaf > 1e-3)
-    
+
 
 @pytest.mark.parametrize("m", [10, 50, 100])
 @pytest.mark.parametrize("j", [5, 50, 100])
@@ -102,8 +89,6 @@ def test_est_vaf_CI(m, j, c, a):
     ci_mle_p = prob_germline.est_vaf_CI()
     assert np.all(prob_germline.vaf == vaf)
     assert np.all(ci_mle_p[:, 0] <= ci_mle_p[:, 2])
-
-
 
 
 @pytest.mark.parametrize("m", [10, 50, 100])
@@ -136,7 +121,6 @@ def test_llr_het_somatic(m, j, c, a, p, v):
     assert llrs.size == prob_germline.M
     if np.sum(somatic) > 0:
         assert np.mean(llrs[somatic])
-
 
 
 @pytest.mark.parametrize("m", [10, 50, 100])

@@ -50,3 +50,6 @@ attr = "pGermlinePoly.__version__"
 
 [tool.coverage.run]
 omit = ['*/cli.py']
+
+[tool.ruff.lint]
+ignore = ['E731']
