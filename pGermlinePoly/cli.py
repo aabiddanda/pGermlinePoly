@@ -252,7 +252,7 @@ def main(
     else:
         for a, lhat in zip(config["annotations"], lambdas_hat):
             out_vcf.add_to_header(f"##lambda_{a}={lhat}")
-    out_vcf.add_to_header(f"##{' '.join(sys.argv)}")
+    out_vcf.add_to_header(f"##pGermlinePoly=run {' '.join(sys.argv[1:])}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
     i = 0
