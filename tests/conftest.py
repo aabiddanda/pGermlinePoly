@@ -14,18 +14,23 @@ def sim_read_counts(
     np.random.seed(seed)
     X = np.zeros((m, j, 2), dtype="int")
     somatic = np.random.binomial(n=1, p=p_somatic, size=m)
+    Z = np.zeros((m, j), dtype="int")
     for i in range(m):
         n_i = np.random.poisson(coverage, size=j)
         if somatic[i]:
             x_i = np.random.binomial(n=1, p=vaf, size=j)
+            Z[i, :] = x_i
             a_i = np.zeros(j)
-            a_i[x_i] = np.random.binomial(n=n_i[x_i], p=0.5)
-            a_i[~x_i] = np.random.binomial(n=n_i[~x_i], p=eps)
+            for jx, x in enumerate(x_i):
+                if x:
+                    a_i[jx] = np.random.binomial(n=n_i[jx], p=0.5)
+                else:
+                    a_i[jx] = np.random.binomial(n=n_i[jx], p=eps)
         else:
             a_i = np.random.binomial(n=n_i, p=0.5)
         X[i, :, 1] = a_i
         X[i, :, 0] = n_i - a_i
-    return X, somatic
+    return X, somatic, Z
 
 
 def sim_annotations(m=100, a=5, seed=42):

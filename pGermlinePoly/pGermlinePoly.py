@@ -75,7 +75,7 @@ class ProbGermline:
         llr = np.zeros(self.M)
         for i in range(self.M):
             llr[i] = loglik_ratio(
-                ax=self.X[i, :, 1], rx=self.X[i, :, 0], alpha=self.vaf[i], **kwargs
+                ax=self.X[i, :, 1], rx=self.X[i, :, 0], alpha=2 * self.vaf[i], **kwargs
             )
         return llr
 
@@ -108,13 +108,13 @@ class ProbGermline:
                 rx=self.X[i, :, 0],
                 lambdas=lambdas,
                 anno=self.Theta[i, :],
-                alpha=self.vaf[i],
+                alpha=2 * self.vaf[i],
                 **kwargs,
             )
         return post_k
 
     def est_vaf_CI(self, alpha=0.05, df=1, **kwargs):
-        """Estimate the variant allele frequency from likelihoods across all the clonal data.
+        """Estimate the variant allele frequency from likelihoods pooled across clonal data.
 
         Uses the Wilks approximation to the profile-likelihood CI construction.
         """
@@ -156,8 +156,9 @@ class ProbGermline:
 
         """
         assert lambdas.size == self.A
+        assert self.vaf is not None
         logll = complete_loglik(
-            X=self.X, A=self.Theta, lambdas=lambdas, alpha=self.vaf, **kwargs
+            X=self.X, A=self.Theta, lambdas=lambdas, alpha=2 * self.vaf, **kwargs
         )
         return logll
 
@@ -170,9 +171,7 @@ class ProbGermline:
             - algo (`string`): Type of optimization algorithm for likelihood.
 
         Returns:
-            - a0_hat (`float`): approximate log-likelihood of the model.
             - lambda_hat (`np.array`): weight parameters for priors
-
         """
         assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
         opt_res = minimize(
