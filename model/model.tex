@@ -5,7 +5,7 @@
 
 % Set page size and margins
 % Replace `letterpaper' with `a4paper' for UK/EU standard size
-\usepackage[a4paper,margin=0.5in]{geometry}
+\usepackage[a4paper,margin=1in]{geometry}
 
 % Useful packages
 \usepackage{amsmath,amsfonts, caption}
@@ -372,8 +372,8 @@ and $\varphi_j$, the M-step objective combines contributions from both levels:
 where $\eta_k = P(z_k = \mathrm{het} \mid \mathbf{A}_k, \mathbf{R}_k)$ is the
 current posterior from Equation~\eqref{eq:posterior}, acting as a soft label
 for the site-level binary regression on $z_k$.  The combined objective is again
-a weighted logistic regression --- now over both sites (for $\pi_k$) and
-site-clone pairs (for $\varphi_j$) --- solvable by L-BFGS.
+a weighted logistic regression, now over both sites (for $\pi_k$) and
+site-clone pairs (for $\varphi_j$), solvable by straightforward optimization.
 
 \paragraph{Concentration parameter $\kappa$.}
 The M-step for $\kappa$ maximises the expected log-likelihood of the
@@ -448,118 +448,7 @@ We analyse the time complexity of each component of the model in terms of:
   \item $S$ --- number of function evaluations in the Brent line search for $\kappa$
 \end{itemize}
 
-Throughout, evaluating a single Binomial PMF $\mathrm{Bin}(a, n, p)$ costs
-$O(1)$ via precomputed log-factorial tables.  Evaluating a Beta--Binomial PMF
-$\mathrm{BetaBin}(a, n; \alpha, \beta)$ also costs $O(1)$ via log-Gamma
-arithmetic (specifically, three evaluations of $\log\Gamma$).
-
-\subsubsection*{Per-Clone Likelihood (Equation~\ref{eq:perclone})}
-
-At a single site $k$ and clone $j$, the mixture requires one Binomial and one
-Beta--Binomial evaluation plus one weighted sum, all $O(1)$:
-\begin{equation*}
-  \mathcal{T}_{\text{per clone}} = O(1)
-\end{equation*}
-Across all $J$ clones at one site:
-\begin{equation*}
-  \mathcal{T}_{\text{one site}} = O(J)
-\end{equation*}
-Across all $K$ sites:
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{per-clone likelihood}} = O(JK)}
-\end{equation}
-
-\subsubsection*{Full Somatic Likelihood (Equation~\ref{eq:full})}
-
-The product over $J$ clones at each site $k$ is $O(J)$; with $K$ sites this
-remains $O(JK)$.  When $\varphi_j$ is obtained directly from the logistic model
-(Section~\ref{sec:annot}) rather than marginalised by numerical quadrature, no
-additional cost is incurred:
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{somatic likelihood}} = O(JK)}
-\end{equation}
-If instead $\varphi$ is marginalised by $Q$-point Gauss--Legendre quadrature,
-the cost rises to $O(QJK)$, where $Q \approx 20$--$50$ suffices in practice.
-
-\subsubsection*{Germline Likelihood (Equation~\ref{eq:germline})}
-
-A single Binomial evaluation per clone per site, no mixture:
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{germline likelihood}} = O(JK)}
-\end{equation}
-
-\subsubsection*{Logistic Model for \texorpdfstring{$\varphi_j$}{phi\_j}
-  (Equation~\ref{eq:logistic})}
-
-The site-level linear combination $\mu_k = \sum_\ell \lambda_\ell \Theta_{k\ell}$
-costs $O(L)$ per site, giving $O(KL)$ across all sites.  The clone-level term
-$\delta_j = \sum_m \beta_m \Phi_{jm}$ costs $O(M)$ per clone, giving $O(JM)$
-per site and $O(JKM)$ across all sites and clones.  Applying the logistic
-sigmoid and combining the two terms:
-\begin{equation}
-  \boxed{\mathcal{T}_{\varphi_j} = O\!\left(K(L + JM)\right)}
-\end{equation}
-When $M = 0$ (site-level annotations only) this reduces to $O(KL)$; when $L =
-0$ (clone-level only) it is $O(JKM)$.
-
-\subsubsection*{EM E-Step}
-
-Computing $\gamma_{jk}$ for all $j, k$ requires one evaluation of the per-clone
-likelihood (numerator and denominator share terms and can be computed jointly):
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{E-step}} = O(JK)}
-\end{equation}
-
-\subsubsection*{EM M-Step}
-
-\paragraph{Logistic regression update.}
-The weighted logistic regression over $JK$ observations with $L + M$ parameters
-costs $O(JK(L + M))$ per gradient or Newton step, iterated for $T$ steps of
-the inner optimiser (e.g.\ L-BFGS):
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{M-step, }\boldsymbol{\lambda}/\boldsymbol{\beta}}
-  = O\!\left(T \cdot JK(L + M)\right)}
-\end{equation}
-
-\paragraph{Concentration parameter $\kappa$ update.}
-Each evaluation of $\mathcal{Q}(\kappa)$ in Equation~\eqref{eq:mstep_kappa}
-requires $O(JK)$ digamma calls, each $O(1)$.  Brent's method converges in
-$S \sim 20$--$50$ function evaluations:
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{M-step, }\kappa} = O(S \cdot JK)}
-\end{equation}
-Since $S \ll T(L+M)$ in practice, this term is dominated by the logistic
-regression update and does not change the overall M-step complexity.
-
-\subsubsection*{Posterior Probability (Equation~\ref{eq:posterior})}
-
-Given precomputed likelihoods, the posterior at each site is a ratio of two
-scalars:
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{posterior}} = O(K)}
-\end{equation}
-
-\subsubsection*{Three-State Genotype Extension (Section~\ref{sec:genotype})}
-
-Adding the $g_{jk} = 2$ component introduces one additional Binomial evaluation
-per clone per site.  The asymptotic complexity is unchanged:
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{three-state}} = O(JK)}
-\end{equation}
-
-\subsubsection*{Full EM Algorithm (One Iteration)}
-
-A single EM iteration comprises the E-step and M-step.  The logistic model
-evaluation dominates when $L$ or $M$ is large:
-\begin{equation}
-  \boxed{\mathcal{T}_{\text{EM iteration}} = O\!\left(T \cdot JK(L + M)\right)}
-\end{equation}
-For typical values --- $J \sim 10$--$100$ clones, $K \sim 10^4$--$10^6$ sites,
-$L + M \sim 10$--$20$ annotations, $T \sim 20$ L-BFGS steps --- this is
-comfortably parallelisable across sites, as each site's likelihood factors
-independently.
-
-\subsection*{Summary Table}
+We briefly summarize the computational complexity of each stage below.
 
 \begin{center}
 \renewcommand{\arraystretch}{1.45}
@@ -584,37 +473,34 @@ Full EM (one iteration) & $O(T \cdot JK(L+M))$ & M-step logistic regression \\
 
 \section*{Model Validation and Performance}
 
-For initial validation, we simulated read-level data under the model and for $K=1000$ estimated the contribution of two annotations $\lambda_1, \lambda_2$ to the posterior probability of being a germline polymorphic site. We artificially simulated $K' = 100$ sites as true somatic variants in this setting. \\
+\subsection*{Model Comparisons}
 
-
-
-
-\section*{Limitations / Model Improvement}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-\section*{Model Comparisons}
-
-\subsection*{Beta-Binomial Overdispersion Model}
+\subsubsection*{Beta-Binomial Overdispersion Model}
 
 One of the first models for identifying somatic mutations in this clonal sequencing setting (without germline references) \citep{Spencer-Chapman2021-cy} uses the observation that for truly somatic variants, only a fraction of sampled clonal lineages may carry it, making the \textit{pooled} alternative read count ($R$) across all samples \textit{overdispersed}. One way to capture this by estimating the overdispersion ($\hat{\rho}$) of a beta-binomial distribution accounting for the reads:
 
 $$
-R | N \sim BetaBinom\left(\hat{p}\frac{1 - \rho}{\rho}, (1 - \hat{p})\frac{1-\rho}{\rho}\right)
+R | N \sim \texttt{BetaBin}\left(\hat{p}\frac{1 - \rho}{\rho}, (1 - \hat{p})\frac{1-\rho}{\rho}\right)
 $$
 
-, where $\hat{p}$ is the MLE estimate for the VAF. In the original work\citep{Spencer-Chapman2021-cy}, the proposal was simply to exclude any variant with $\hat{\rho} > 0.1$. This approach works quite well in simulations with fairly even coverage across samples (at the proposed variant in question). In \texttt{pGermlinePoly} we provide this ``pooled overdispersion'' estimator as a secondary annotation under request in case the user would like to incorporate this in the future.
+, where $\hat{p}$ is the MLE estimate for the VAF. In the original work\citep{Spencer-Chapman2021-cy}, the proposal was simply to exclude any variant with $\hat{\rho} > 0.1$. This approach works quite well in simulations with fairly even coverage across samples (at the proposed variant in question). In \texttt{pGermlinePoly} we provide this ``pooled overdispersion'' estimator as a secondary annotation in case the user would like to incorporate this in the future.
+
+
+
+\subsection*{Validation in simulation-based settings}
+
+Alongside the implementation of the inference model, we also implemented a simulation engine which simulates a somatic phylogeny and places mutations onto the phylogeny using the infinite-sites model and analogously samples a VCF-level
+
+
+% TODO: fill this in after actually running and setting up the somatic variant simulation experiments
+\lipsum[3]
+
+
+
+\subsection*{Validation in realized clonal sequencing datasets}
+
+
+
 
 \bibliographystyle{unsrt} % We choose the "plain" reference style
 \bibliography{refs} % Entries are in the refs.bib file

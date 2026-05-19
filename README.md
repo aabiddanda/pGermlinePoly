@@ -21,27 +21,37 @@ We highly recommend installing `pGermlinePoly` within a standalone environment (
 
 ## Running `pGermlinePoly`
 
-The core algorithm for annotating a clonal sequencing VCF file is wrapped in the executable `pGermlinePoly`.
+The core algorithm for annotating a clonal sequencing VCF file is wrapped in the executable `pGermlinePoly`. At least one inference mode flag (`--em`, `--lrt`, `--mutect2`, or `--betabinomial`) must be specified.
 
 ```
 Usage: pGermlinePoly [OPTIONS]
 
   Inference of annotation-informed probability of germline polymorphism from
-  somatic sequencing data.
+  somatic clonal sequencing data using an EM algorithm that jointly estimates
+  logistic annotation weights (lambda) and a Beta-Binomial error concentration
+  (kappa).
 
 Options:
-  -v, --vcf PATH                  Input VCF file.  [required]
-  -c, --config PATH               Input config file detailing clone structure.
-                                  [required]
+  -v, --vcf PATH                  Input VCF file for all clones.  [required]
+  -g, --germline_vcf PATH         Input VCF for germline sample.
+  -c, --config PATH               Input config file detailing clonal
+                                  structure.  [required]
   -t, --nthreads INTEGER          Number of threads.  [default: 1]
   -a, --algo [L-BFGS-B|Powell|Nelder-Mead]
-                                  Optimization algorithm for EM-algorithm or
-                                  naive optimization.  [default: L-BFGS-B]
-  -n, --naive                     Numerical optimization of MLE parameters.
-                                  [default: True]
+                                  Optimization algorithm for the EM M-step.
+                                  [default: L-BFGS-B]
+  -e, --eps FLOAT                 Error rate for read-level alleles.
+                                  [default: 0.001]
+  -d, --delta FLOAT               EM convergence threshold (absolute change in
+                                  log-likelihood).  [default: 0.0001]
+  --em                            Run the EM algorithm to estimate annotation
+                                  weights (lambda) and Beta-Binomial
+                                  concentration (kappa).
   --lrt                           Frequentist likelihood ratio test testing
                                   deviation from germline heterozygote.
-  --vaf                           Estimate the variant allele frequency.
+  --mutect2                       LOD Score from Mutect2.
+  --betabinomial                  Implement the Beta-Binomial overdispersion
+                                  method from Spencer-Chapman et al.
   -o, --out TEXT                  Output VCF file (defaults to stdout)
                                   [default: - required]
   --help                          Show this message and exit.
@@ -50,49 +60,58 @@ Options:
 
 ### Configuration Structure
 
-The configuration yaml file for running `pGermlinePoly`
-
-The minimal fields have been:
+The configuration yaml file for running `pGermlinePoly` has the following fields:
 
 - `ind`: the overall identifier for the individual (not used for inference)
 - `sex`: the sex of the individual (not used for inference)
 - `age`: the age of the individual (not used for inference)
-- `annotations`: the annotations that are used when constructing the EM-algorithm for weights.
-- `clones`: the list of clone IDs - that should also be in the VCF file.
-- `germline`: the germline sample IDs.
+- `annotations`: the INFO field annotations used when constructing the EM-algorithm for weights.
+- `clones`: the list of clone sample IDs — must match sample names in the clone VCF.
+- `germline` *(optional)*: the germline sample IDs. If present, a separate germline VCF must be provided via `--germline_vcf`.
 
 An example configuration is below:
 
-```
+```yaml
 ind: IndA
 sex: M
 age: 50.0
 annotations:
-	- ExternalAF
-	- DP
+  - ExternalAF
+  - DP
 clones:
-	- Aclone0
-	- Aclone1
-	- Aclone2
-	- Aclone3
-	- Aclone4
-	- Aclone5
-	- Aclone6
+  - Aclone0
+  - Aclone1
+  - Aclone2
+  - Aclone3
+  - Aclone4
+  - Aclone5
+  - Aclone6
 germline:
-	- Agermline
+  - Agermline
 ```
 
-### VAF Estimation
+### EM Algorithm (`--em`)
 
-One major goal of clonal sequencing is to estimate the frequency of associated somatic variant, the ``variant allele fraction'' or VAF. If clear genotyping data is available then the maximum-likelihood estimator of the VAF is a good one, but uncertainty of this quantity is rarely reported.
+The primary inference mode. Runs an EM algorithm to jointly estimate logistic annotation weights (lambda) and the Beta-Binomial concentration parameter (kappa). After convergence, each site is annotated with:
 
-We use a frequentist approach and use the inverse of the Fisher Information for each site as a way to quantify the 95% confidence interval of the VAF. To include the VAF confidence interval as an annotation in the resulting VCF, use the `--vaf` flag when running `pGermlinePoly`.
+- `ppGermlinePoly`: log posterior probability of germline polymorphism.
+- `mleVAF`: MLE estimate of variant allele frequency with 95% CI (formatted as `mle:lower:upper`).
 
-### Likelihood Ratio Test for Somatic Variants
+Estimated parameters (`lambda` per annotation and `kappa`) are written to the VCF header.
 
-We also have implemented a likelihood ratio test for site-level detection of somatic mutations, where the underlying null hypothesis for a human germline heterozygote is $H_0: VAF = 0.5$ (assuming that the sampling process is unbiased). We directly evaluate this using the per-site likelihood under the maximum-likelihood estimate of the VAF, and compare to the null hypothesis. Note that this null hypothesis assumes diploid and largely focuses on heterozygotes so may be inaccurate in regions where there is a germline deletion or duplication.
+### Likelihood Ratio Test (`--lrt`)
 
-This can also be used effectively as a frequentist analog of the filtering criteria for a somatic mutation (which notably does not rely on annotations for priors), and p-values can also be constructed under a chi-squared distribution. In order to annotate the resulting VCF with the likelihood ratio test statistic use the `--lrt` flag.
+A frequentist likelihood ratio test for site-level detection of somatic mutations, where the null hypothesis for a human germline heterozygote is $H_0: VAF = 0.5$ (assuming unbiased sampling). The per-site likelihood under the MLE VAF is compared to the null. Note that this null assumes diploid heterozygotes and may be inaccurate in regions with germline copy number changes.
+
+P-values can be constructed under a chi-squared distribution. Annotates the output VCF with `lrtGermlinePoly`.
+
+### Mutect2 LOD Score (`--mutect2`)
+
+Estimates the LOD score for somatic variants using the Mutect2 model. Annotates the output VCF with `lodMutect`.
+
+### Beta-Binomial Overdispersion (`--betabinomial`)
+
+Implements the Beta-Binomial overdispersion approach from Spencer-Chapman et al. to detect read-count overdispersion indicative of somatic variants. Annotates the output VCF with `rhobeta`.
 
 
 ## Simulating somatic clonal sequencing data
@@ -137,13 +156,13 @@ Options:
                                  [default: 1.2e-09]
   -g, --mean_germline_cov FLOAT  Mean coverage in germline sample.  [default:
                                  15.0]
-  -v, --var_germline_cov FLOAT   Variance in germline coverage.  [default:
-                                 5.0]
+  -v, --sd_germline_cov FLOAT    Standard deviation in germline coverage.
+                                 [default: 5.0]
   -gq, --germline_q FLOAT        Assumed read-quality score for germline.
                                  [default: 30.0]
   -gc, --mean_clone_cov FLOAT    Mean coverage in clone sequencing depth.
                                  [default: 15.0]
-  -vc, --var_clone_cov FLOAT     Variance in clone sequencing depth.
+  -vc, --sd_clone_cov FLOAT      Standard deviation in clone sequencing depth.
                                  [default: 5.0]
   -cq, --clone_q FLOAT           Assumed read-quality score for clones.
                                  [default: 30.0]
