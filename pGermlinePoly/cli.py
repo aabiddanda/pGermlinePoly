@@ -133,7 +133,14 @@ def main(
     betabinomial,
     out,
 ):
-    """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
+    """Run the pGermlinePoly inference pipeline on an input VCF.
+
+    Validates the config and VCF, extracts read counts and annotations,
+    runs the EM algorithm to estimate logistic annotation weights (lambda)
+    and the Beta-Binomial concentration (kappa), then writes an annotated
+    output VCF with per-site ``ppGermlinePoly`` and ``mleVAF`` INFO fields.
+    Optional flags add ``lrtGermlinePoly``, ``lodMutect``, and ``rhobeta``.
+    """
     logging.info("Checking config structure ...")
     config = validate_config(config)
     logging.info("Finished config structure check!")

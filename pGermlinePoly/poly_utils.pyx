@@ -9,7 +9,28 @@ cdef extern from "math.h":
     float INFINITY
 
 cdef double digamma(double x) nogil:
-    """Digamma function via recurrence to x>=6, then asymptotic expansion."""
+    """Compute the digamma function using upward recurrence and asymptotic expansion.
+
+    Shifts x up via the recurrence psi(x) = psi(x+1) - 1/x until x >= 6,
+    then applies the Stirling asymptotic series.
+
+    Parameters
+    ----------
+    x : double
+        Argument of the digamma function. Must be positive.
+
+    Returns
+    -------
+    double
+        Value of psi(x).
+
+    Notes
+    -----
+    Asymptotic series used for x >= 6::
+
+        psi(x) ~ ln(x) - 1/(2x) - 1/(12x^2) + 1/(120x^4)
+                  - 1/(252x^6) + 1/(240x^8) - 1/(132x^10)
+    """
     cdef double result = 0.0
     cdef double y, y2
     # Shift x up: psi(x) = psi(x+1) - 1/x
@@ -29,7 +50,20 @@ cdef double digamma(double x) nogil:
     return result
 
 cpdef double logaddexp(double a, double b) nogil:
-    """Log-add exponential for two values."""
+    """Compute log(exp(a) + exp(b)) in a numerically stable way.
+
+    Parameters
+    ----------
+    a : double
+        First log-space value.
+    b : double
+        Second log-space value.
+
+    Returns
+    -------
+    double
+        log(exp(a) + exp(b)).
+    """
     cdef double m
     cdef double c
     m = max(a, b)
@@ -37,7 +71,18 @@ cpdef double logaddexp(double a, double b) nogil:
     return m + log(c)
 
 cpdef double logsumexp(double[:] x):
-    """Cython implementation of the logsumexp trick."""
+    """Compute log(sum(exp(x))) using the logsumexp trick for numerical stability.
+
+    Parameters
+    ----------
+    x : double[:]
+        1-D array of log-space values, shape (N,).
+
+    Returns
+    -------
+    double
+        log(sum_i exp(x[i])).
+    """
     cdef int i, n
     cdef double m = -1e32
     cdef double c = 0.0
@@ -49,18 +94,69 @@ cpdef double logsumexp(double[:] x):
     return m + log(c)
 
 cdef double log1mexp(double a) nogil:
-    """Log of 1 - e^-x."""
+    """Compute log(1 - exp(-a)) in a numerically stable way.
+
+    Parameters
+    ----------
+    a : double
+        Non-negative value.
+
+    Returns
+    -------
+    double
+        log(1 - exp(-a)).
+
+    Notes
+    -----
+    Uses ``log(-expm1(-a))`` when ``a <= log(2)`` and ``log1p(-exp(-a))``
+    otherwise, following Machler (2012) to avoid cancellation near zero.
+    """
     if a <= 0.693:
         return log(-expm1(-a))
     else:
         return log1p(-exp(-a))
 
 cdef double logbinomial(long alt, long ref, double p) nogil:
-    """Log-probability mass function of the binomial distribution."""
+    """Compute the log binomial probability kernel (no combinatorial term).
+
+    Returns ``alt * log(p) + ref * log(1 - p)``. The binomial coefficient
+    is omitted, matching the convention in ``log_betabinom`` so that
+    responsibility ratios are correct.
+
+    Parameters
+    ----------
+    alt : long
+        Number of successes (alternative allele reads).
+    ref : long
+        Number of failures (reference allele reads).
+    p : double
+        Success probability.
+
+    Returns
+    -------
+    double
+        alt * log(p) + ref * log(1 - p).
+    """
     return alt * log(p) + ref*log(1. - p)
 
 cpdef double logprob_het(long[:] ax, long[:] rx):
-    """Log-probability mass function for a germline heterozygote."""
+    """Compute the log-likelihood of reads under a germline heterozygote model.
+
+    Evaluates the binomial log-likelihood at p = 0.5 for each clone and sums
+    over all J clones.
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+
+    Returns
+    -------
+    double
+        sum_j logBinom(ax[j], rx[j]; p=0.5).
+    """
     cdef int i, j
     cdef double ll
     j = ax.size
@@ -70,7 +166,29 @@ cpdef double logprob_het(long[:] ax, long[:] rx):
     return ll
 
 cpdef double logprob_somatic(long[:] ax, long[:] rx, double alpha, double eps=1e-3):
-    """Log-probability mass function for a somatic mutation."""
+    """Compute the log-likelihood of reads under a somatic mutation model.
+
+    Each clone is modelled as a two-component mixture: with probability
+    ``alpha`` the clone carries the mutation (binomial at p=0.5), otherwise
+    it shows only sequencing error (binomial at p=``eps``). Log-likelihoods
+    are summed over all J clones.
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+    alpha : double
+        Mixture weight for the carrier component.
+    eps : double, optional
+        Sequencing error rate. Default is 1e-3.
+
+    Returns
+    -------
+    double
+        sum_j log[alpha * Binom(0.5) + (1-alpha) * Binom(eps)].
+    """
     cdef int i, j
     cdef double ll
     j = ax.size
@@ -81,13 +199,47 @@ cpdef double logprob_somatic(long[:] ax, long[:] rx, double alpha, double eps=1e
     return ll
 
 cpdef loglik_ratio(long[:] ax, long[:] rx, double alpha, double eps=1e-3):
-    """Evaluate the log-likelihood ratio between these two categories."""
+    """Compute the log-likelihood ratio statistic 2*(LL_somatic - LL_het).
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+    alpha : double
+        Mixture weight for the somatic carrier component.
+    eps : double, optional
+        Sequencing error rate. Default is 1e-3.
+
+    Returns
+    -------
+    double
+        2 * (logprob_somatic - logprob_het).
+    """
     ll_het = logprob_het(ax, rx)
     ll_somatic = logprob_somatic(ax, rx, alpha=alpha, eps=eps)
     return 2*(ll_somatic - ll_het)
 
 cpdef double log_prior(double[:] l, double[:] a):
-    """Cython implementation of the logistic function."""
+    """Compute the log prior probability of germline status under a logistic model.
+
+    Evaluates ``log sigma(l . a) = -log(1 + exp(-l . a))``, where sigma is
+    the logistic (sigmoid) function and ``l . a`` is the dot product of the
+    weight vector and site annotation vector.
+
+    Parameters
+    ----------
+    l : double[:]
+        Logistic regression weight vector (lambda), shape (P,).
+    a : double[:]
+        Site annotation feature vector, shape (P,).
+
+    Returns
+    -------
+    double
+        log sigma(l . a).
+    """
     cdef int i, n
     cdef double xk = 0.0
     cdef double prior_p = 0.0
@@ -98,7 +250,28 @@ cpdef double log_prior(double[:] l, double[:] a):
     return prior_p
 
 cpdef double var_loglik(int alt_reads, int ref_reads, double f, double eps=1e-3):
-    """Calculate the likelihood of the underlying reads given VAF."""
+    """Compute the log-likelihood of observed reads given a variant allele frequency.
+
+    Models reads as a mixture of true variant signal and sequencing error,
+    parameterised by VAF ``f`` and error rate ``eps``.
+
+    Parameters
+    ----------
+    alt_reads : int
+        Number of alternative allele reads.
+    ref_reads : int
+        Number of reference allele reads.
+    f : double
+        Variant allele frequency (VAF), in [0, 1].
+    eps : double, optional
+        Sequencing error rate. Default is 1e-3.
+
+    Returns
+    -------
+    double
+        log L(f) = ref_reads * log(f*eps + (1-f)*(1-eps))
+                   + alt_reads * log(f*(1-eps) + (1-f)*eps).
+    """
     cdef double ref_logll, alt_logll
     ref_logll = ref_reads * log(f*eps + (1 - f)*(1 - eps))
     alt_logll = alt_reads * log(f * (1 - eps) + (1 - f)*eps)
@@ -107,7 +280,31 @@ cpdef double var_loglik(int alt_reads, int ref_reads, double f, double eps=1e-3)
 cpdef double posterior_poly(long[:] ax, long[:] rx,
         double[:] lambdas, double[:] anno,
         double alpha, double eps=1e-3):
-    """Calculate the posterior probability of germline polymorphism."""
+    """Compute the log posterior probability of germline polymorphism.
+
+    Combines the logistic prior with the heterozygote and somatic likelihoods
+    using Bayes' rule and returns ``log P(z = het | A, R)``.
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+    lambdas : double[:]
+        Logistic regression weight vector, shape (P,).
+    anno : double[:]
+        Site annotation feature vector, shape (P,).
+    alpha : double
+        Mixture weight for the somatic carrier component.
+    eps : double, optional
+        Sequencing error rate. Default is 1e-3.
+
+    Returns
+    -------
+    double
+        log P(z = het | A, R).
+    """
     cdef double denom, num
     cdef double pi0_k
     pi0_k = log_prior(lambdas, anno)
@@ -118,7 +315,27 @@ cpdef double posterior_poly(long[:] ax, long[:] rx,
     return num - denom
 
 cpdef double complete_loglik(long[:, :, :] X, double[:, :] A, double[:] lambdas, double[:] alpha, double eps=1e-3):
-    """Compute the complete data log-likelihood."""
+    """Compute the complete-data log-likelihood summed over all M sites.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2); X[m, j, 0] = ref reads,
+        X[m, j, 1] = alt reads.
+    A : double[:, :]
+        Site annotation matrix, shape (M, P).
+    lambdas : double[:]
+        Logistic regression weight vector, shape (P,).
+    alpha : double[:]
+        Per-site somatic carrier mixture weights, shape (M,).
+    eps : double, optional
+        Sequencing error rate. Default is 1e-3.
+
+    Returns
+    -------
+    double
+        sum_m log P(A_m, R_m | lambdas, alpha_m, eps).
+    """
     cdef int m
     cdef double pi0
     cdef double logll = 0.0
@@ -131,7 +348,32 @@ cpdef double complete_loglik(long[:, :, :] X, double[:, :] A, double[:] lambdas,
     return logll
 
 cpdef double incomplete_loglik(long[:, :, :] X, double[:, :] A, double[:] lambdas, double[:] gammas, double[:] alpha, double eps=1e-3):
-    """Compute the incomplete log-likelihood."""
+    """Compute the expected complete-data log-likelihood (Q function) for the EM algorithm.
+
+    Weights each site's contribution by the current E-step responsibilities
+    ``gammas[k]``, forming the Q function used in the EM M-step.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2); X[k, j, 0] = ref reads,
+        X[k, j, 1] = alt reads.
+    A : double[:, :]
+        Site annotation matrix, shape (M, P).
+    lambdas : double[:]
+        Logistic regression weight vector, shape (P,).
+    gammas : double[:]
+        Log-space site-level responsibilities from the E-step, shape (M,).
+    alpha : double[:]
+        Per-site somatic carrier mixture weights, shape (M,).
+    eps : double, optional
+        Sequencing error rate. Default is 1e-3.
+
+    Returns
+    -------
+    double
+        Q function value summed over all M sites.
+    """
     cdef double logll = 0.0, pi0
     cdef int k, M = X.shape[0]
     for k in range(M):
@@ -142,7 +384,21 @@ cpdef double incomplete_loglik(long[:, :, :] X, double[:, :] A, double[:] lambda
     return logll
 
 cdef double[:] phred_rescale(double[:] raw_gl):
-    """Perform phred-based rescaling of the genotype likelihoods."""
+    """Rescale log-space genotype likelihoods to Phred scale and normalize.
+
+    Converts each entry to -10 * log10(prob), then subtracts the minimum
+    value so that the best genotype has a Phred score of 0.
+
+    Parameters
+    ----------
+    raw_gl : double[:]
+        Log-probability genotype likelihoods, shape (3,). Modified in place.
+
+    Returns
+    -------
+    double[:]
+        Phred-scaled, minimum-normalized genotype likelihoods, shape (3,).
+    """
     cdef double min_gl
     cdef int i, n
     cdef double[:] norm_gl = raw_gl
@@ -158,16 +414,25 @@ cdef double[:] phred_rescale(double[:] raw_gl):
 
 
 cdef double geno_gl(int alt_reads, int tot_reads, int a1=0, int a2=0, double q=30.0):
-    """Cython implementation of genotype likelihoods under the GATK model.
+    """Compute a single diploid genotype log-likelihood under the GATK error model.
 
-    Arguments:
-        - alt_reads (`int`): number of alternative reads.
-        - tot_reads (`int`): number of total reads.
-        - a1 (`int`): first allelic state.
-        - a2 (`int`): second allelic state.
-        - q (`float`): Phred-scaled read quality.
-    Returns:
-        - gl (`float`): genotype likelihood.
+    Parameters
+    ----------
+    alt_reads : int
+        Number of alternative allele reads.
+    tot_reads : int
+        Total number of reads (alt + ref).
+    a1 : int, optional
+        First allelic state (0 = ref, 1 = alt). Default is 0.
+    a2 : int, optional
+        Second allelic state (0 = ref, 1 = alt). Default is 0.
+    q : double, optional
+        Phred-scaled per-base read quality. Must be positive. Default is 30.0.
+
+    Returns
+    -------
+    double
+        log P(reads | genotype (a1, a2), quality q).
     """
     cdef int i
     cdef float eps, gl
@@ -185,7 +450,27 @@ cdef double geno_gl(int alt_reads, int tot_reads, int a1=0, int a2=0, double q=3
     return gl
 
 cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
-    """Actual genotype likelihood computation."""
+    """Compute Phred-scaled genotype likelihoods for the three diploid genotypes.
+
+    Evaluates the GATK genotype likelihood model for homozygous reference
+    (0/0), heterozygous (0/1), and homozygous alternative (1/1), then
+    converts to Phred scale and normalizes so the best genotype scores 0.
+
+    Parameters
+    ----------
+    alt_reads : int
+        Number of alternative allele reads.
+    tot_reads : int
+        Total number of reads (alt + ref).
+    q : double, optional
+        Phred-scaled per-base read quality. Default is 30.0.
+
+    Returns
+    -------
+    double[:]
+        Phred-scaled PL values for genotypes [0/0, 0/1, 1/1], shape (3,),
+        with the minimum PL value set to 0.
+    """
     cdef double[:] norm_gl
     cdef double raw_gl[3]
     raw_gl[0] = geno_gl(alt_reads, tot_reads, a1=0, a2=0, q=q)
@@ -200,7 +485,23 @@ cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
 # ---------------------------------------------------------------------------
 
 cdef double log_logistic(double x) nogil:
-    """Numerically stable log(sigma(x))."""
+    """Compute the log-sigmoid log(sigma(x)) in a numerically stable way.
+
+    Parameters
+    ----------
+    x : double
+        Input value (logit).
+
+    Returns
+    -------
+    double
+        log(1 / (1 + exp(-x))).
+
+    Notes
+    -----
+    Uses ``-log1p(exp(-x))`` for x >= 0 and ``x - log1p(exp(x))`` for x < 0
+    to avoid overflow for large |x|.
+    """
     if x >= 0.0:
         return -log1p(exp(-x))
     else:
@@ -208,10 +509,29 @@ cdef double log_logistic(double x) nogil:
 
 
 cdef double log_betabinom(long a, long n, double alpha, double beta) nogil:
-    """Log BetaBinomial kernel without binomial coefficient.
+    """Compute the log Beta-Binomial probability kernel (binomial coefficient omitted).
 
-    Convention matches logbinomial (which also omits the combinatorial term),
-    so ratios used in responsibilities are correct.
+    The binomial coefficient is dropped to match the convention in
+    ``logbinomial``, so responsibility ratios computed from the two kernels
+    are numerically correct.
+
+    Parameters
+    ----------
+    a : long
+        Alternative allele read count.
+    n : long
+        Total read depth (alt + ref).
+    alpha : double
+        First Beta shape parameter (typically ``mu * kappa``).
+    beta : double
+        Second Beta shape parameter (typically ``(1 - mu) * kappa``).
+
+    Returns
+    -------
+    double
+        lgamma(a + alpha) + lgamma(ref + beta) - lgamma(n + alpha + beta)
+        + lgamma(alpha + beta) - lgamma(alpha) - lgamma(beta),
+        where ref = n - a.
     """
     cdef long ref = n - a
     return (lgamma(<double>a + alpha) + lgamma(<double>ref + beta)
@@ -221,7 +541,30 @@ cdef double log_betabinom(long a, long n, double alpha, double beta) nogil:
 
 cdef double logprob_somatic_clone(long a, long n, double logit_phi,
                                       double mu, double kappa) nogil:
-    """Per-clone somatic log-likelihood P(a_jk, r_jk | z=somatic, phi_j, mu, kappa) (Eq. 1)."""
+    """Compute the per-clone somatic log-likelihood under the Beta-Binomial error model.
+
+    Evaluates log P(a_jk | z=somatic, phi_j, mu, kappa) as a two-component
+    mixture: a binomial carrier term and a Beta-Binomial error term, as in
+    Eq. 1 of the model.
+
+    Parameters
+    ----------
+    a : long
+        Alternative allele read count for this clone at this site.
+    n : long
+        Total read depth for this clone (alt + ref).
+    logit_phi : double
+        Logit-transformed clone carrier probability logit(phi_j).
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter of the Beta-Binomial distribution.
+
+    Returns
+    -------
+    double
+        log[phi_j * Binom(a; n, 0.5) + (1 - phi_j) * BetaBinom(a; n, mu*kappa, (1-mu)*kappa)].
+    """
     cdef double log_phi   = log_logistic(logit_phi)
     cdef double log1m_phi = log_logistic(-logit_phi)
     cdef double log_bin   = logbinomial(a, n - a, 0.5)
@@ -232,7 +575,29 @@ cdef double logprob_somatic_clone(long a, long n, double logit_phi,
 cpdef double logprob_somatic_bb(long[:] ax, long[:] rx,
                                  double[:] logit_phi,
                                  double mu=1e-3, double kappa=100.0):
-    """Full somatic log-likelihood across all clones (Eq. 2)."""
+    """Compute the full somatic log-likelihood summed across all clones.
+
+    Sums per-clone somatic log-likelihoods over J clones for a single site,
+    as in Eq. 2 of the model.
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+    logit_phi : double[:]
+        Logit-transformed clone carrier probabilities, shape (J,).
+    mu : double, optional
+        Mean of the Beta-Binomial error distribution. Default is 1e-3.
+    kappa : double, optional
+        Concentration parameter of the Beta-Binomial distribution. Default is 100.0.
+
+    Returns
+    -------
+    double
+        sum_j logprob_somatic_clone(ax[j], ax[j]+rx[j], logit_phi[j], mu, kappa).
+    """
     cdef int j, J = ax.size
     cdef double ll = 0.0
     for j in range(J):
@@ -242,7 +607,30 @@ cpdef double logprob_somatic_bb(long[:] ax, long[:] rx,
 
 cpdef double log_gamma_jk(long a, long n, double logit_phi,
                            double mu, double kappa):
-    """Log clone-level responsibility log gamma_jk (Eq. 11)."""
+    """Compute the log clone-level carrier responsibility log gamma_jk.
+
+    Returns the log posterior probability that clone j carries the somatic
+    mutation at site k, i.e. log P(carrier | a_jk), as in Eq. 11.
+
+    Parameters
+    ----------
+    a : long
+        Alternative allele read count for clone j at site k.
+    n : long
+        Total read depth for clone j at site k (alt + ref).
+    logit_phi : double
+        Logit-transformed carrier probability for clone j, logit(phi_j).
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter of the Beta-Binomial distribution.
+
+    Returns
+    -------
+    double
+        log gamma_jk = log phi_j + log Binom(a; n, 0.5)
+                       - logaddexp(log phi_j + log Binom, log(1-phi_j) + log BetaBinom).
+    """
     cdef double log_phi   = log_logistic(logit_phi)
     cdef double log1m_phi = log_logistic(-logit_phi)
     cdef double log_bin   = logbinomial(a, n - a, 0.5)
@@ -254,7 +642,32 @@ cpdef double log_gamma_jk(long a, long n, double logit_phi,
 cpdef double log_posterior_germline(long[:] ax, long[:] rx,
                                 double[:] logit_phi, double logit_pi,
                                 double mu, double kappa):
-    """Log posterior P(z_k = het | A_k, R_k) (Eq. 9)."""
+    """Compute the log posterior probability that site k is a germline heterozygote.
+
+    Returns log P(z_k = het | A_k, R_k) by combining the site-level prior
+    pi_k with the heterozygote and somatic likelihoods summed over J clones,
+    as in Eq. 9.
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+    logit_phi : double[:]
+        Logit-transformed clone carrier probabilities, shape (J,).
+    logit_pi : double
+        Logit-transformed site-level germline prior probability logit(pi_k).
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter of the Beta-Binomial distribution.
+
+    Returns
+    -------
+    double
+        log P(z_k = het | A_k, R_k).
+    """
     cdef double log_pi      = log_logistic(logit_pi)
     cdef double log1m_pi    = log_logistic(-logit_pi)
     cdef double log_p_het   = logprob_het(ax, rx)
@@ -270,7 +683,31 @@ cpdef double log_posterior_germline(long[:] ax, long[:] rx,
 cpdef double observed_loglik_site(long[:] ax, long[:] rx,
                                       double[:] logit_phi, double logit_pi,
                                       double mu, double kappa):
-    """Observed data log-likelihood for a single site log P(A_k, R_k)."""
+    """Compute the observed-data log-likelihood for a single site.
+
+    Marginalizes over the latent class z_k to give
+    log P(A_k, R_k) = logaddexp(log pi_k + log P_het, log(1-pi_k) + log P_som).
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+    logit_phi : double[:]
+        Logit-transformed clone carrier probabilities, shape (J,).
+    logit_pi : double
+        Logit-transformed site-level germline prior probability logit(pi_k).
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter of the Beta-Binomial distribution.
+
+    Returns
+    -------
+    double
+        log P(A_k, R_k).
+    """
     cdef double log_pi    = log_logistic(logit_pi)
     cdef double log1m_pi  = log_logistic(-logit_pi)
     cdef double log_p_het = logprob_het(ax, rx)
@@ -282,7 +719,22 @@ cpdef double observed_loglik_site(long[:] ax, long[:] rx,
 
 
 cdef double _log_p_het_row(long[:, :, :] X, int k, int J) nogil:
-    """Sum of logbinomial(0.5) over all clones j for site k."""
+    """Sum the heterozygote log-likelihood over all clones for site k.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2).
+    k : int
+        Site index.
+    J : int
+        Number of clones.
+
+    Returns
+    -------
+    double
+        sum_j logBinom(X[k,j,1], X[k,j,0]; p=0.5).
+    """
     cdef int j
     cdef double acc = 0.0
     for j in range(J):
@@ -292,7 +744,28 @@ cdef double _log_p_het_row(long[:, :, :] X, int k, int J) nogil:
 
 cdef double _log_p_som_row(long[:, :, :] X, double[:, :] logit_phi,
                             int k, int J, double mu, double kappa) nogil:
-    """Sum of logprob_somatic_clone over all clones j for site k."""
+    """Sum the somatic log-likelihood over all clones for site k.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2).
+    logit_phi : double[:, :]
+        Logit-transformed clone carrier probabilities, shape (M, J).
+    k : int
+        Site index.
+    J : int
+        Number of clones.
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter of the Beta-Binomial distribution.
+
+    Returns
+    -------
+    double
+        sum_j logprob_somatic_clone for site k.
+    """
     cdef int j
     cdef double acc = 0.0
     for j in range(J):
@@ -304,7 +777,27 @@ cdef double _log_p_som_row(long[:, :, :] X, double[:, :] logit_phi,
 cdef void _fill_gammas_row(long[:, :, :] X, double[:, :] logit_phi,
                             double[:, :] gammas_out,
                             int k, int J, double mu, double kappa) noexcept nogil:
-    """Fill gammas_out[k, :] with clone-level responsibilities."""
+    """Fill gammas_out[k, :] with clone-level carrier responsibilities for site k.
+
+    Writes exp(log_gamma_jk) into gammas_out[k, j] for each clone j.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2).
+    logit_phi : double[:, :]
+        Logit-transformed clone carrier probabilities, shape (M, J).
+    gammas_out : double[:, :]
+        Output responsibility array, shape (M, J). Modified in place.
+    k : int
+        Site index.
+    J : int
+        Number of clones.
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter of the Beta-Binomial distribution.
+    """
     cdef int j
     cdef long n_kj
     cdef double log_phi_jk, log1m_phi_jk, log_bin_jk, log_bb_jk
@@ -326,11 +819,31 @@ cpdef void e_step_all(long[:, :, :] X,
                        double mu, double kappa,
                        double[:] eta_out,
                        double[:, :] gammas_out):
-    """Compute E-step responsibilities for all sites (Eq. 10-11).
+    """Compute E-step responsibilities for all sites in parallel.
 
-    Fills eta_out (M,) with site-level posteriors and gammas_out (M, J)
-    with clone-level carrier responsibilities, both in probability space.
-    Sites are processed in parallel via OpenMP prange.
+    Fills ``eta_out`` with site-level posterior probabilities of germline
+    heterozygosity and ``gammas_out`` with clone-level carrier
+    responsibilities, both in probability space. Sites are processed in
+    parallel via OpenMP ``prange``, as described in Eqs. 10-11.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2); X[k, j, 0] = ref reads,
+        X[k, j, 1] = alt reads.
+    logit_phi : double[:, :]
+        Logit-transformed clone carrier probabilities, shape (M, J).
+    logit_pi : double[:]
+        Logit-transformed site-level germline prior probabilities, shape (M,).
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter of the Beta-Binomial distribution.
+    eta_out : double[:]
+        Output array for P(z_k = het | data), shape (M,). Modified in place.
+    gammas_out : double[:, :]
+        Output array for clone-level carrier responsibilities, shape (M, J).
+        Modified in place.
     """
     cdef int k, M = X.shape[0], J = X.shape[1]
     cdef double log_pi_k, log1m_pi_k, log_p_het_k, log_p_som_k
@@ -349,7 +862,30 @@ cpdef void e_step_all(long[:, :, :] X,
 
 cpdef double kappa_Q(long[:, :, :] X, double[:, :] gammas,
                       double mu, double kappa):
-    """Objective Q(kappa) for the kappa M-step (Eq. 13)."""
+    """Evaluate the kappa M-step objective Q(kappa).
+
+    Computes the expected log Beta-Binomial contribution to the complete-data
+    log-likelihood, weighted by the somatic responsibilities (1 - gamma_jk),
+    as in Eq. 13.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2); X[k, j, 0] = ref reads,
+        X[k, j, 1] = alt reads.
+    gammas : double[:, :]
+        Clone-level carrier responsibilities from the E-step, shape (M, J).
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter to evaluate the objective at.
+
+    Returns
+    -------
+    double
+        Q(kappa) = sum_{k,j} (1 - gamma_kj)
+                   * log_betabinom(a_kj, n_kj, mu*kappa, (1-mu)*kappa).
+    """
     cdef int k, j, M = X.shape[0], J = X.shape[1]
     cdef double Q = 0.0, a, n
     for k in prange(M, schedule='static', nogil=True):
@@ -364,7 +900,38 @@ cpdef double kappa_Q(long[:, :, :] X, double[:, :] gammas,
 
 cpdef double kappa_score(long[:, :, :] X, double[:, :] gammas,
                           double mu, double kappa):
-    """Score dQ/dkappa for Brent's method (Eq. 14)."""
+    """Compute the score dQ/dkappa for use in Brent's method.
+
+    Evaluates the first derivative of the kappa M-step objective with respect
+    to kappa using digamma functions, as in Eq. 14. Passed as the bracketing
+    function to scipy ``brentq``.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2); X[k, j, 0] = ref reads,
+        X[k, j, 1] = alt reads.
+    gammas : double[:, :]
+        Clone-level carrier responsibilities from the E-step, shape (M, J).
+    mu : double
+        Mean of the Beta-Binomial error distribution.
+    kappa : double
+        Concentration parameter at which to evaluate the score.
+
+    Returns
+    -------
+    double
+        dQ/dkappa summed over all sites and clones.
+
+    Notes
+    -----
+    dQ/dkappa = sum_{k,j} (1 - gamma_kj) * [
+        mu * psi(a + mu*kappa) + (1-mu) * psi(n-a + (1-mu)*kappa)
+        - psi(n + kappa) - mu * psi(mu*kappa)
+        - (1-mu) * psi((1-mu)*kappa) + psi(kappa)
+    ]
+    where psi denotes the digamma function.
+    """
     cdef int k, j, M = X.shape[0], J = X.shape[1]
     cdef double score = 0.0, a, n, w
     for k in prange(M, schedule='static', nogil=True):
