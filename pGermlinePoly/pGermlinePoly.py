@@ -5,7 +5,6 @@ import msprime
 import numpy as np
 import warnings
 
-logger = logging.getLogger(__name__)
 from poly_utils import (
     loglik_ratio,
     var_loglik,
@@ -14,10 +13,12 @@ from poly_utils import (
     observed_loglik_site,
     e_step_all,
     kappa_score,
-    kappa_Q,
+    sum_log_betabinom,
 )
 from scipy.optimize import minimize, minimize_scalar, brentq
-from scipy.stats import beta, binom, betabinom, chi2, norm, poisson, uniform
+from scipy.stats import beta, binom, chi2, norm, poisson, uniform
+
+logger = logging.getLogger(__name__)
 
 
 class ProbGermline:
@@ -189,7 +190,7 @@ class ProbGermline:
         """
         site = self.Theta @ lambdas  # (M,)
         if self.B > 0 and betas is not None and betas.size > 0:
-            clone = np.einsum('mjb,b->mj', self.Phi, betas)  # (M, J)
+            clone = np.einsum("mjb,b->mj", self.Phi, betas)  # (M, J)
             logit = site[:, None] + clone
         else:
             logit = np.broadcast_to(site[:, None], (self.M, self.J)).copy()
@@ -239,8 +240,13 @@ class ProbGermline:
         logit_pi = self._compute_logit_pi(lambdas, np.zeros(self.B))
         return -np.log1p(np.exp(-logit_pi))  # log sigmoid — shape (M,)
 
-    def post_prob_poly(self, lambdas=np.array([0.0, 0.0], dtype="double"),
-                       betas=None, kappa=None, **kwargs):
+    def post_prob_poly(
+        self,
+        lambdas=np.array([0.0, 0.0], dtype="double"),
+        betas=None,
+        kappa=None,
+        **kwargs,
+    ):
         """Compute the log posterior probability of germline heterozygosity for all sites.
 
         Evaluates log P(z_k = het | A_k, R_k) for each of the M sites
@@ -270,7 +276,7 @@ class ProbGermline:
             kappa = self.kappa
 
         logit_phi = self._compute_logit_phi(lambdas, betas)  # (M, J)
-        logit_pi  = self._compute_logit_pi(lambdas, betas)   # (M,)
+        logit_pi = self._compute_logit_pi(lambdas, betas)  # (M,)
         post_k = np.zeros(self.M)
         for k in range(self.M):
             post_k[k] = log_posterior_germline(
@@ -332,8 +338,13 @@ class ProbGermline:
             ci_mle_p[i, 2] = upper_CI
         return ci_mle_p
 
-    def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double"),
-                        betas=None, kappa=None, **kwargs):
+    def complete_logll(
+        self,
+        lambdas=np.array([0.0, 0.0], dtype="double"),
+        betas=None,
+        kappa=None,
+        **kwargs,
+    ):
         """Compute the observed data log-likelihood summed over all M sites.
 
         Evaluates sum_k log P(A_k, R_k) by marginalizing the latent class
@@ -361,7 +372,7 @@ class ProbGermline:
         if kappa is None:
             kappa = self.kappa
         logit_phi = self._compute_logit_phi(lambdas, betas)  # (M, J)
-        logit_pi  = self._compute_logit_pi(lambdas, betas)   # (M,)
+        logit_pi = self._compute_logit_pi(lambdas, betas)  # (M,)
         logll = 0.0
         for k in range(self.M):
             logll += observed_loglik_site(
@@ -426,8 +437,8 @@ class ProbGermline:
             Clone-level carrier responsibilities, shape (M, J).
         """
         logit_phi = self._compute_logit_phi(lambdas, betas)  # (M, J) contiguous float64
-        logit_pi  = self._compute_logit_pi(lambdas, betas)   # (M,)
-        eta    = np.zeros(self.M, dtype=np.float64)
+        logit_pi = self._compute_logit_pi(lambdas, betas)  # (M,)
+        eta = np.zeros(self.M, dtype=np.float64)
         gammas = np.zeros((self.M, self.J), dtype=np.float64)
         e_step_all(self.X, logit_phi, logit_pi, self.mu, kappa, eta, gammas)
         return eta, gammas
@@ -461,36 +472,42 @@ class ProbGermline:
         params0 = np.concatenate([lambdas0, betas0])
         L, B = self.L, self.B
         Theta = self.Theta  # (M, L)
-        Phi   = self.Phi    # (M, J, B) or None
+        Phi = self.Phi  # (M, J, B) or None
         Phi_bar = self.Phi_bar  # (M, B) or None
 
         def neg_Q(params):
             lam = params[:L]
             bet = params[L:]
 
-            logit_pi  = Theta @ lam
+            logit_pi = Theta @ lam
             if B > 0:
                 logit_pi = logit_pi + Phi_bar @ bet
             # phi per clone
-            site_part = (Theta @ lam)[:, None]   # (M, 1)
+            site_part = (Theta @ lam)[:, None]  # (M, 1)
             if B > 0:
-                clone_part = np.einsum('mjb,b->mj', Phi, bet)  # (M, J)
+                clone_part = np.einsum("mjb,b->mj", Phi, bet)  # (M, J)
                 logit_phi = site_part + clone_part
             else:
                 logit_phi = np.broadcast_to(site_part, (self.M, self.J))
 
-            log_pi    = -np.log1p(np.exp(-logit_pi))
-            log1m_pi  = -np.log1p(np.exp( logit_pi))
-            log_phi   = -np.log1p(np.exp(-logit_phi))
-            log1m_phi = -np.log1p(np.exp( logit_phi))
+            log_pi = -np.log1p(np.exp(-logit_pi))
+            log1m_pi = -np.log1p(np.exp(logit_pi))
+            log_phi = -np.log1p(np.exp(-logit_phi))
+            log1m_phi = -np.log1p(np.exp(logit_phi))
 
-            site_term  = np.dot(eta, log_pi) + np.dot(1.0 - eta, log1m_pi)
+            site_term = np.dot(eta, log_pi) + np.dot(1.0 - eta, log1m_pi)
             clone_term = (gammas * log_phi + (1.0 - gammas) * log1m_phi).sum()
             return -(site_term + clone_term)
 
         bounds = [(-20.0, 20.0)] * (L + B)
-        opt = minimize(neg_Q, params0, method=algo, bounds=bounds,
-                       tol=1e-8, options={"disp": False})
+        opt = minimize(
+            neg_Q,
+            params0,
+            method=algo,
+            bounds=bounds,
+            tol=1e-8,
+            options={"disp": False},
+        )
         return opt.x[:L], opt.x[L:]
 
     def _m_step_kappa(self, gammas):
@@ -587,7 +604,9 @@ class ProbGermline:
             eta, gammas = self._e_step(lambdas, betas, kappa)
 
             # M-step: logistic weights
-            lambdas, betas = self._m_step_lambda_beta(eta, gammas, lambdas, betas, algo=algo)
+            lambdas, betas = self._m_step_lambda_beta(
+                eta, gammas, lambdas, betas, algo=algo
+            )
 
             # M-step: kappa (Brent on Cython score function)
             kappa = self._m_step_kappa(gammas)
@@ -599,12 +618,17 @@ class ProbGermline:
             cur_delta = abs(loglls[-1] - loglls[-2])
             logger.info(
                 "EM iter %d  loglik=%.6f  delta=%.2e  kappa=%.4f",
-                iteration, new_ll, cur_delta, kappa,
+                iteration,
+                new_ll,
+                cur_delta,
+                kappa,
             )
 
         logger.info(
             "EM converged in %d iterations  loglik=%.6f  kappa=%.4f",
-            iteration, loglls[-1], kappa,
+            iteration,
+            loglls[-1],
+            kappa,
         )
         self.kappa = kappa
         return np.array(loglls), lambdas, betas, kappa
@@ -763,12 +787,12 @@ class BetaOverdispersion:
             ref_reads = self.X[i, :, 0]
             opt_rho = minimize_scalar(
                 lambda x: (
-                    -betabinom.logpmf(
+                    -sum_log_betabinom(
                         alt_reads,
-                        alt_reads + ref_reads,
-                        a=phat * (1 - x) / x,
-                        b=(1.0 - phat) * (1 - x) / x,
-                    ).sum()
+                        ref_reads,
+                        phat * (1 - x) / x,
+                        (1.0 - phat) * (1 - x) / x,
+                    )
                 ),
                 bounds=(1e-20, 1 - 1e-20),
             ).x

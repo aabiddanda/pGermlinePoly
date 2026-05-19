@@ -539,8 +539,75 @@ cdef double log_betabinom(long a, long n, double alpha, double beta) nogil:
             + lgamma(alpha + beta) - lgamma(alpha) - lgamma(beta))
 
 
-cdef double logprob_somatic_clone(long a, long n, double logit_phi,
-                                      double mu, double kappa) nogil:
+cdef double log_betabinom_prenorm(
+        long a, long n, double alpha, double beta,
+        double log_norm) nogil:
+    """log_betabinom with a precomputed normalization constant.
+
+    Identical to ``log_betabinom`` but skips recomputing the three lgamma
+    terms that depend only on alpha and beta (not on the data).  Call this
+    inside clone-level loops where alpha and beta are fixed across clones.
+
+    Parameters
+    ----------
+    a : long
+        Alternative allele read count.
+    n : long
+        Total read depth (alt + ref).
+    alpha : double
+        First Beta shape parameter.
+    beta : double
+        Second Beta shape parameter.
+    log_norm : double
+        Precomputed lgamma(alpha + beta) - lgamma(alpha) - lgamma(beta).
+
+    Returns
+    -------
+    double
+        lgamma(a + alpha) + lgamma(ref + beta) - lgamma(n + alpha + beta) + log_norm.
+    """
+    cdef long ref = n - a
+    return (lgamma(<double>a + alpha) + lgamma(<double>ref + beta)
+            - lgamma(<double>n + alpha + beta) + log_norm)
+
+
+cpdef double sum_log_betabinom(
+        long[:] alt_reads, long[:] ref_reads,
+        double alpha, double beta):
+    """Sum the log Beta-Binomial kernel over clones for a single site.
+
+    Computes sum_j log_betabinom(alt_j, alt_j + ref_j, alpha, beta).
+    The binomial coefficient is omitted — it is constant with respect to
+    the rho parameter being optimised and therefore does not affect the argmax.
+
+    Parameters
+    ----------
+    alt_reads : long[:]
+        Alternative allele read counts per clone, shape (J,).
+    ref_reads : long[:]
+        Reference allele read counts per clone, shape (J,).
+    alpha : double
+        First Beta shape parameter (e.g. phat * (1 - rho) / rho).
+    beta : double
+        Second Beta shape parameter (e.g. (1 - phat) * (1 - rho) / rho).
+
+    Returns
+    -------
+    double
+        sum_j log_betabinom(alt_j, n_j, alpha, beta).
+    """
+    cdef int j, J = alt_reads.shape[0]
+    cdef double acc = 0.0
+    cdef double log_norm = lgamma(alpha + beta) - lgamma(alpha) - lgamma(beta)
+    for j in range(J):
+        acc += log_betabinom_prenorm(alt_reads[j], alt_reads[j] + ref_reads[j],
+                                     alpha, beta, log_norm)
+    return acc
+
+
+cdef double logprob_somatic_clone(
+        long a, long n, double logit_phi,
+        double mu, double kappa) nogil:
     """Compute the per-clone somatic log-likelihood under the Beta-Binomial error model.
 
     Evaluates log P(a_jk | z=somatic, phi_j, mu, kappa) as a two-component
@@ -565,16 +632,17 @@ cdef double logprob_somatic_clone(long a, long n, double logit_phi,
     double
         log[phi_j * Binom(a; n, 0.5) + (1 - phi_j) * BetaBinom(a; n, mu*kappa, (1-mu)*kappa)].
     """
-    cdef double log_phi   = log_logistic(logit_phi)
+    cdef double log_phi = log_logistic(logit_phi)
     cdef double log1m_phi = log_logistic(-logit_phi)
-    cdef double log_bin   = logbinomial(a, n - a, 0.5)
-    cdef double log_bb    = log_betabinom(a, n, mu * kappa, (1.0 - mu) * kappa)
+    cdef double log_bin = logbinomial(a, n - a, 0.5)
+    cdef double log_bb = log_betabinom(a, n, mu * kappa, (1.0 - mu) * kappa)
     return logaddexp(log_phi + log_bin, log1m_phi + log_bb)
 
 
-cpdef double logprob_somatic_bb(long[:] ax, long[:] rx,
-                                 double[:] logit_phi,
-                                 double mu=1e-3, double kappa=100.0):
+cpdef double logprob_somatic_bb(
+        long[:] ax, long[:] rx,
+        double[:] logit_phi,
+        double mu=1e-3, double kappa=100.0):
     """Compute the full somatic log-likelihood summed across all clones.
 
     Sums per-clone somatic log-likelihoods over J clones for a single site,
@@ -605,8 +673,9 @@ cpdef double logprob_somatic_bb(long[:] ax, long[:] rx,
     return ll
 
 
-cpdef double log_gamma_jk(long a, long n, double logit_phi,
-                           double mu, double kappa):
+cpdef double log_gamma_jk(
+        long a, long n, double logit_phi,
+        double mu, double kappa):
     """Compute the log clone-level carrier responsibility log gamma_jk.
 
     Returns the log posterior probability that clone j carries the somatic
@@ -631,10 +700,10 @@ cpdef double log_gamma_jk(long a, long n, double logit_phi,
         log gamma_jk = log phi_j + log Binom(a; n, 0.5)
                        - logaddexp(log phi_j + log Binom, log(1-phi_j) + log BetaBinom).
     """
-    cdef double log_phi   = log_logistic(logit_phi)
+    cdef double log_phi = log_logistic(logit_phi)
     cdef double log1m_phi = log_logistic(-logit_phi)
-    cdef double log_bin   = logbinomial(a, n - a, 0.5)
-    cdef double log_bb    = log_betabinom(a, n, mu * kappa, (1.0 - mu) * kappa)
+    cdef double log_bin = logbinomial(a, n - a, 0.5)
+    cdef double log_bb = log_betabinom(a, n, mu * kappa, (1.0 - mu) * kappa)
     cdef double log_denom = logaddexp(log_phi + log_bin, log1m_phi + log_bb)
     return log_phi + log_bin - log_denom
 
@@ -668,21 +737,22 @@ cpdef double log_posterior_germline(long[:] ax, long[:] rx,
     double
         log P(z_k = het | A_k, R_k).
     """
-    cdef double log_pi      = log_logistic(logit_pi)
-    cdef double log1m_pi    = log_logistic(-logit_pi)
-    cdef double log_p_het   = logprob_het(ax, rx)
-    cdef double log_p_som   = 0.0
+    cdef double log_pi = log_logistic(logit_pi)
+    cdef double log1m_pi = log_logistic(-logit_pi)
+    cdef double log_p_het = logprob_het(ax, rx)
+    cdef double log_p_som = 0.0
     cdef int j, J = ax.size
     for j in range(J):
         log_p_som += logprob_somatic_clone(ax[j], ax[j] + rx[j], logit_phi[j], mu, kappa)
-    cdef double log_num   = log_pi + log_p_het
+    cdef double log_num = log_pi + log_p_het
     cdef double log_denom = logaddexp(log_num, log1m_pi + log_p_som)
     return log_num - log_denom
 
 
-cpdef double observed_loglik_site(long[:] ax, long[:] rx,
-                                      double[:] logit_phi, double logit_pi,
-                                      double mu, double kappa):
+cpdef double observed_loglik_site(
+        long[:] ax, long[:] rx,
+        double[:] logit_phi, double logit_pi,
+        double mu, double kappa):
     """Compute the observed-data log-likelihood for a single site.
 
     Marginalizes over the latent class z_k to give
@@ -708,8 +778,8 @@ cpdef double observed_loglik_site(long[:] ax, long[:] rx,
     double
         log P(A_k, R_k).
     """
-    cdef double log_pi    = log_logistic(logit_pi)
-    cdef double log1m_pi  = log_logistic(-logit_pi)
+    cdef double log_pi = log_logistic(logit_pi)
+    cdef double log1m_pi = log_logistic(-logit_pi)
     cdef double log_p_het = logprob_het(ax, rx)
     cdef double log_p_som = 0.0
     cdef int j, J = ax.size
@@ -742,8 +812,10 @@ cdef double _log_p_het_row(long[:, :, :] X, int k, int J) nogil:
     return acc
 
 
-cdef double _log_p_som_row(long[:, :, :] X, double[:, :] logit_phi,
-                            int k, int J, double mu, double kappa) nogil:
+cdef double _log_p_som_row(
+        long[:, :, :] X, double[:, :] logit_phi,
+        int k, int J,
+        double alpha, double beta, double log_norm) nogil:
     """Sum the somatic log-likelihood over all clones for site k.
 
     Parameters
@@ -756,10 +828,12 @@ cdef double _log_p_som_row(long[:, :, :] X, double[:, :] logit_phi,
         Site index.
     J : int
         Number of clones.
-    mu : double
-        Mean of the Beta-Binomial error distribution.
-    kappa : double
-        Concentration parameter of the Beta-Binomial distribution.
+    alpha : double
+        mu * kappa (first Beta shape parameter).
+    beta : double
+        (1 - mu) * kappa (second Beta shape parameter).
+    log_norm : double
+        Precomputed lgamma(alpha + beta) - lgamma(alpha) - lgamma(beta).
 
     Returns
     -------
@@ -767,16 +841,23 @@ cdef double _log_p_som_row(long[:, :, :] X, double[:, :] logit_phi,
         sum_j logprob_somatic_clone for site k.
     """
     cdef int j
-    cdef double acc = 0.0
+    cdef double acc = 0.0, log_phi, log1m_phi, log_bin, log_bb
     for j in range(J):
-        acc += logprob_somatic_clone(X[k, j, 1], X[k, j, 0] + X[k, j, 1],
-                                     logit_phi[k, j], mu, kappa)
+        log_phi = log_logistic(logit_phi[k, j])
+        log1m_phi = log_logistic(-logit_phi[k, j])
+        log_bin = logbinomial(X[k, j, 1], X[k, j, 0], 0.5)
+        log_bb = log_betabinom_prenorm(
+            X[k, j, 1], X[k, j, 0] + X[k, j, 1],
+            alpha, beta, log_norm)
+        acc += logaddexp(log_phi + log_bin, log1m_phi + log_bb)
     return acc
 
 
-cdef void _fill_gammas_row(long[:, :, :] X, double[:, :] logit_phi,
-                            double[:, :] gammas_out,
-                            int k, int J, double mu, double kappa) noexcept nogil:
+cdef void _fill_gammas_row(
+        long[:, :, :] X, double[:, :] logit_phi,
+        double[:, :] gammas_out,
+        int k, int J,
+        double alpha, double beta, double log_norm) noexcept nogil:
     """Fill gammas_out[k, :] with clone-level carrier responsibilities for site k.
 
     Writes exp(log_gamma_jk) into gammas_out[k, j] for each clone j.
@@ -793,32 +874,35 @@ cdef void _fill_gammas_row(long[:, :, :] X, double[:, :] logit_phi,
         Site index.
     J : int
         Number of clones.
-    mu : double
-        Mean of the Beta-Binomial error distribution.
-    kappa : double
-        Concentration parameter of the Beta-Binomial distribution.
+    alpha : double
+        mu * kappa (first Beta shape parameter).
+    beta : double
+        (1 - mu) * kappa (second Beta shape parameter).
+    log_norm : double
+        Precomputed lgamma(alpha + beta) - lgamma(alpha) - lgamma(beta).
     """
     cdef int j
     cdef long n_kj
     cdef double log_phi_jk, log1m_phi_jk, log_bin_jk, log_bb_jk
     for j in range(J):
-        n_kj         = X[k, j, 0] + X[k, j, 1]
-        log_phi_jk   = log_logistic(logit_phi[k, j])
+        n_kj = X[k, j, 0] + X[k, j, 1]
+        log_phi_jk = log_logistic(logit_phi[k, j])
         log1m_phi_jk = log_logistic(-logit_phi[k, j])
-        log_bin_jk   = logbinomial(X[k, j, 1], X[k, j, 0], 0.5)
-        log_bb_jk    = log_betabinom(X[k, j, 1], n_kj, mu * kappa, (1.0 - mu) * kappa)
+        log_bin_jk = logbinomial(X[k, j, 1], X[k, j, 0], 0.5)
+        log_bb_jk = log_betabinom_prenorm(X[k, j, 1], n_kj, alpha, beta, log_norm)
         gammas_out[k, j] = exp(
             log_phi_jk + log_bin_jk
             - logaddexp(log_phi_jk + log_bin_jk, log1m_phi_jk + log_bb_jk)
         )
 
 
-cpdef void e_step_all(long[:, :, :] X,
-                       double[:, :] logit_phi,
-                       double[:] logit_pi,
-                       double mu, double kappa,
-                       double[:] eta_out,
-                       double[:, :] gammas_out):
+cpdef void e_step_all(
+        long[:, :, :] X,
+        double[:, :] logit_phi,
+        double[:] logit_pi,
+        double mu, double kappa,
+        double[:] eta_out,
+        double[:, :] gammas_out):
     """Compute E-step responsibilities for all sites in parallel.
 
     Fills ``eta_out`` with site-level posterior probabilities of germline
@@ -848,20 +932,24 @@ cpdef void e_step_all(long[:, :, :] X,
     cdef int k, M = X.shape[0], J = X.shape[1]
     cdef double log_pi_k, log1m_pi_k, log_p_het_k, log_p_som_k
     cdef double log_eta_num, log_eta_denom
+    cdef double alpha = mu * kappa
+    cdef double beta = (1.0 - mu) * kappa
+    cdef double log_norm = lgamma(kappa) - lgamma(alpha) - lgamma(beta)
 
-    for k in prange(M, schedule='static', nogil=True):
-        log_p_het_k   = _log_p_het_row(X, k, J)
-        log_p_som_k   = _log_p_som_row(X, logit_phi, k, J, mu, kappa)
-        log_pi_k      = log_logistic(logit_pi[k])
-        log1m_pi_k    = log_logistic(-logit_pi[k])
-        log_eta_num   = log_pi_k + log_p_het_k
+    for k in prange(M, schedule="static", nogil=True):
+        log_p_het_k = _log_p_het_row(X, k, J)
+        log_p_som_k = _log_p_som_row(X, logit_phi, k, J, alpha, beta, log_norm)
+        log_pi_k = log_logistic(logit_pi[k])
+        log1m_pi_k = log_logistic(-logit_pi[k])
+        log_eta_num = log_pi_k + log_p_het_k
         log_eta_denom = logaddexp(log_eta_num, log1m_pi_k + log_p_som_k)
-        eta_out[k]    = exp(log_eta_num - log_eta_denom)
-        _fill_gammas_row(X, logit_phi, gammas_out, k, J, mu, kappa)
+        eta_out[k] = exp(log_eta_num - log_eta_denom)
+        _fill_gammas_row(X, logit_phi, gammas_out, k, J, alpha, beta, log_norm)
 
 
-cpdef double kappa_Q(long[:, :, :] X, double[:, :] gammas,
-                      double mu, double kappa):
+cpdef double kappa_Q(
+        long[:, :, :] X, double[:, :] gammas,
+        double mu, double kappa):
     """Evaluate the kappa M-step objective Q(kappa).
 
     Computes the expected log Beta-Binomial contribution to the complete-data
@@ -888,18 +976,22 @@ cpdef double kappa_Q(long[:, :, :] X, double[:, :] gammas,
     """
     cdef int k, j, M = X.shape[0], J = X.shape[1]
     cdef double Q = 0.0, a, n
-    for k in prange(M, schedule='static', nogil=True):
+    cdef double alpha = mu * kappa
+    cdef double beta = (1.0 - mu) * kappa
+    cdef double log_norm = lgamma(kappa) - lgamma(alpha) - lgamma(beta)
+    for k in prange(M, schedule="static", nogil=True):
         for j in range(J):
             a = X[k, j, 1]
             n = X[k, j, 0] + X[k, j, 1]
-            Q += (1.0 - gammas[k, j]) * log_betabinom(
-                <long>a, <long>n, mu * kappa, (1.0 - mu) * kappa
+            Q += (1.0 - gammas[k, j]) * log_betabinom_prenorm(
+                <long>a, <long>n, alpha, beta, log_norm
             )
     return Q
 
 
-cpdef double kappa_score(long[:, :, :] X, double[:, :] gammas,
-                          double mu, double kappa):
+cpdef double kappa_score(
+        long[:, :, :] X, double[:, :] gammas,
+        double mu, double kappa):
     """Compute the score dQ/dkappa for use in Brent's method.
 
     Evaluates the first derivative of the kappa M-step objective with respect
@@ -934,7 +1026,7 @@ cpdef double kappa_score(long[:, :, :] X, double[:, :] gammas,
     """
     cdef int k, j, M = X.shape[0], J = X.shape[1]
     cdef double score = 0.0, a, n, w
-    for k in prange(M, schedule='static', nogil=True):
+    for k in prange(M, schedule="static", nogil=True):
         for j in range(J):
             a = X[k, j, 1]
             n = X[k, j, 0] + X[k, j, 1]

@@ -1,15 +1,16 @@
 import numpy as np
-from scipy.special import expit, digamma as scipy_digamma
+from scipy.special import digamma as scipy_digamma
 import pytest
 from conftest import sim_read_counts, sim_annotations
 
 from pGermlinePoly import ProbGermline
-from poly_utils import kappa_score, kappa_Q
+from poly_utils import kappa_score
 
 
 # ---------------------------------------------------------------------------
 # Reference implementations (scipy) for validating the native digamma path
 # ---------------------------------------------------------------------------
+
 
 def _ref_kappa_score(X, gammas, mu, kappa):
     """Pure-Python reference for kappa_score using scipy digamma."""
@@ -34,6 +35,7 @@ def _ref_kappa_score(X, gammas, mu, kappa):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("mu", [0.1, 0.5, 0.9])
 @pytest.mark.parametrize("kappa", [1.0, 10.0, 100.0])
@@ -135,7 +137,9 @@ def test_est_vaf_nonnaive(m, j, c, a):
 @pytest.mark.parametrize("a", [5])
 @pytest.mark.parametrize("v", [0.1, 0.25])
 def test_vaf_est_all_somatic(m, j, c, a, v):
-    X, somatic, _ = sim_read_counts(m=m, j=j, coverage=c, p_somatic=1.0, vaf=v, seed=m + j)
+    X, somatic, _ = sim_read_counts(
+        m=m, j=j, coverage=c, p_somatic=1.0, vaf=v, seed=m + j
+    )
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -182,7 +186,9 @@ def test_llr_het(m, j, c, a):
 @pytest.mark.parametrize("p", [0.0, 0.1, 0.25])
 @pytest.mark.parametrize("v", [0.05, 0.1, 0.25])
 def test_llr_het_somatic(m, j, c, a, p, v):
-    X, somatic, _ = sim_read_counts(m=m, j=j, coverage=c, p_somatic=p, vaf=v, seed=m + j)
+    X, somatic, _ = sim_read_counts(
+        m=m, j=j, coverage=c, p_somatic=p, vaf=v, seed=m + j
+    )
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -282,9 +288,9 @@ def test_infer_weights(m, j, c, a):
 # EM algorithm simulation test
 # ---------------------------------------------------------------------------
 
+
 def test_em_algo_loglik_nondecreasing():
     """EM log-likelihood must be non-decreasing across all iterations."""
-    rng = np.random.default_rng(42)
     M, J, cov = 60, 8, 30
     X, *_ = sim_read_counts(m=M, j=J, coverage=cov, seed=7)
     A = sim_annotations(m=M, a=2, seed=7)
@@ -299,7 +305,6 @@ def test_em_algo_loglik_nondecreasing():
 
 def test_em_algo_improves_over_null():
     """EM should achieve a strictly better log-likelihood than the null (lambda=0)."""
-    rng = np.random.default_rng(99)
     M, J, cov = 80, 10, 30
     X, *_ = sim_read_counts(m=M, j=J, coverage=cov, seed=5)
     A = sim_annotations(m=M, a=3, seed=5)
@@ -339,10 +344,12 @@ def test_em_algo_discriminates_germline_somatic():
     X = np.vstack([X_germ, X_som])
 
     # Annotation: germline sites draw from N(+2, 0.5), somatic from N(-2, 0.5)
-    Theta = np.vstack([
-        rng.normal(2.0, 0.5, size=(M_germ, 1)),
-        rng.normal(-2.0, 0.5, size=(M_som, 1)),
-    ])
+    Theta = np.vstack(
+        [
+            rng.normal(2.0, 0.5, size=(M_germ, 1)),
+            rng.normal(-2.0, 0.5, size=(M_som, 1)),
+        ]
+    )
 
     pg = ProbGermline(X=X, Theta=Theta)
     pg.mle_vaf()

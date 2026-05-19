@@ -89,6 +89,14 @@ logging.basicConfig(
     help="EM convergence threshold (absolute change in log-likelihood).",
 )
 @click.option(
+    "--em",
+    required=False,
+    default=False,
+    is_flag=True,
+    type=bool,
+    help="Run the EM algorithm to estimate annotation weights (lambda) and Beta-Binomial concentration (kappa).",
+)
+@click.option(
     "--lrt",
     required=False,
     default=False,
@@ -128,6 +136,7 @@ def main(
     algo,
     eps,
     delta,
+    em,
     lrt,
     mutect2,
     betabinomial,
@@ -141,6 +150,10 @@ def main(
     output VCF with per-site ``ppGermlinePoly`` and ``mleVAF`` INFO fields.
     Optional flags add ``lrtGermlinePoly``, ``lodMutect``, and ``rhobeta``.
     """
+    if not any([em, lrt, mutect2, betabinomial]):
+        raise click.UsageError(
+            "At least one of --em, --lrt, --mutect2, or --betabinomial must be specified."
+        )
     logging.info("Checking config structure ...")
     config = validate_config(config)
     logging.info("Finished config structure check!")
@@ -180,17 +193,22 @@ def main(
     logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
     logging.info("Finished imputing missing annotations!")
-    logging.info("Estimating Naive VAF from pooled reads...")
-    p_germline.mle_vaf()
-    logging.info("Finished VAF estimation from pooled reads!")
-    logging.info("Starting EM-algorithm...")
-    _, lambdas_hat, betas_hat, kappa_hat = p_germline.em_algo(algo=algo, delta_logll=delta)
-    logging.info("Finished EM-algorithm!")
-    logging.info("Estimating MLE VAF ...")
-    ci_mle_p = p_germline.est_vaf_CI()
-    logging.info("Finished estimating MLE VAF!")
-    logging.info("Estimating posterior probability of germline heterozygosity...")
-    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat, betas=betas_hat, kappa=kappa_hat)
+    if em:
+        logging.info("Estimating Naive VAF from pooled reads...")
+        p_germline.mle_vaf()
+        logging.info("Finished VAF estimation from pooled reads!")
+        logging.info("Starting EM-algorithm...")
+        _, lambdas_hat, betas_hat, kappa_hat = p_germline.em_algo(
+            algo=algo, delta_logll=delta
+        )
+        logging.info("Finished EM-algorithm!")
+        logging.info("Estimating MLE VAF ...")
+        ci_mle_p = p_germline.est_vaf_CI()
+        logging.info("Finished estimating MLE VAF!")
+        logging.info("Estimating posterior probability of germline heterozygosity...")
+        pp_germline_poly = p_germline.post_prob_poly(
+            lambdas=lambdas_hat, betas=betas_hat, kappa=kappa_hat
+        )
     if lrt:
         logging.info("Estimating the naive likelihood ratio ...")
         loglik_ratio = p_germline.loglik_ratio_het(eps=eps)
@@ -208,22 +226,23 @@ def main(
         logging.info("Estimated rho for Beta-Binomial overdispersion!")
     logging.info(f"Writing annotated VCF output to {out} ...")
     out_vcf = VCF(vcf, samples=samples, threads=nthreads)
-    out_vcf.add_info_to_header(
-        {
-            "ID": "ppGermlinePoly",
-            "Number": 1,
-            "Type": "Float",
-            "Description": "Log posterior probability of germline polymorphism.",
-        }
-    )
-    out_vcf.add_info_to_header(
-        {
-            "ID": "mleVAF",
-            "Number": 1,
-            "Type": "String",
-            "Description": "MLE estimate of variant allele frequency and 95% CI.",
-        }
-    )
+    if em:
+        out_vcf.add_info_to_header(
+            {
+                "ID": "ppGermlinePoly",
+                "Number": 1,
+                "Type": "Float",
+                "Description": "Log posterior probability of germline polymorphism.",
+            }
+        )
+        out_vcf.add_info_to_header(
+            {
+                "ID": "mleVAF",
+                "Number": 1,
+                "Type": "String",
+                "Description": "MLE estimate of variant allele frequency and 95% CI.",
+            }
+        )
     if lrt:
         out_vcf.add_info_to_header(
             {
@@ -251,20 +270,22 @@ def main(
                 "Description": "Beta-Binomial overdispersion from Spencer-Chapman et al.",
             }
         )
-    if "germline" in config:
-        for a, lhat in zip(["germline"] + config["annotations"], lambdas_hat):
-            out_vcf.add_to_header(f"##lambda_{a}={lhat}")
-    else:
-        for a, lhat in zip(config["annotations"], lambdas_hat):
-            out_vcf.add_to_header(f"##lambda_{a}={lhat}")
-    out_vcf.add_to_header(f"##kappa_hat={kappa_hat}")
+    if em:
+        if "germline" in config:
+            for a, lhat in zip(["germline"] + config["annotations"], lambdas_hat):
+                out_vcf.add_to_header(f"##lambda_{a}={lhat}")
+        else:
+            for a, lhat in zip(config["annotations"], lambdas_hat):
+                out_vcf.add_to_header(f"##lambda_{a}={lhat}")
+        out_vcf.add_to_header(f"##kappa_hat={kappa_hat}")
     out_vcf.add_to_header(f"##pGermlinePoly=run {' '.join(sys.argv[1:])}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
     i = 0
-    for pp_gp, v in tqdm(zip(pp_germline_poly, out_vcf)):
-        v.INFO["ppGermlinePoly"] = pp_gp
-        v.INFO["mleVAF"] = f"{ci_mle_p[i, 0]}:{ci_mle_p[i, 1]}:{ci_mle_p[i, 2]}"
+    for v in tqdm(out_vcf):
+        if em:
+            v.INFO["ppGermlinePoly"] = pp_germline_poly[i]
+            v.INFO["mleVAF"] = f"{ci_mle_p[i, 0]}:{ci_mle_p[i, 1]}:{ci_mle_p[i, 2]}"
         if lrt:
             v.INFO["lrtGermlinePoly"] = loglik_ratio[i]
         if mutect2:

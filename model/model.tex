@@ -41,7 +41,7 @@ We specifically want to model how the germline sample, alongside additional info
 
 \section*{Model}
 
-We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z_k\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote. Specifically, assuming that the $J$ clones are independent, we can model the pair of read-counts ($a_{jk}, r_{jk}$), where $n_{jk} = a_{jk} + r_{jk}$, conditional on $z_k$: 
+We start from a model where the output consists of reference and alternative read counts from each of the $J$ clonal samples at the $k^{th}$ site ($R_k$ and $A_k$ respectively). Following previous modeling, we will consider that the $k^{th}$ variant falls in a category $z_k\in \{\texttt{somatic}, \texttt{het}\}$, where $\texttt{het}$ is a germline heterozygote. Specifically, assuming that the $J$ clones are independent, we can model the pair of read-counts ($a_{jk}, r_{jk}$), where $n_{jk} = a_{jk} + r_{jk}$, conditional on $z_k$:
 
 
 \begin{equation}

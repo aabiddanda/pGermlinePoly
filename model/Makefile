@@ -4,4 +4,3 @@ all:
 clean:
 	latexmk -C
 	rm -f *.xml *.aux *.fls *.bbl
-
