@@ -276,3 +276,86 @@ def test_infer_weights(m, j, c, a):
     logll_null = prob_germline.complete_logll(lambdas=lambdas)
     logll_mle = prob_germline.complete_logll(lambdas=lambdas_hat)
     assert logll_mle >= logll_null
+
+
+# ---------------------------------------------------------------------------
+# EM algorithm simulation test
+# ---------------------------------------------------------------------------
+
+def test_em_algo_loglik_nondecreasing():
+    """EM log-likelihood must be non-decreasing across all iterations."""
+    rng = np.random.default_rng(42)
+    M, J, cov = 60, 8, 30
+    X, *_ = sim_read_counts(m=M, j=J, coverage=cov, seed=7)
+    A = sim_annotations(m=M, a=2, seed=7)
+    pg = ProbGermline(X=X, Theta=A)
+    pg.mle_vaf()
+    loglls, _, _, _ = pg.em_algo(delta_logll=1e-3)
+    diffs = np.diff(loglls)
+    assert np.all(diffs >= -1e-6), (
+        f"Log-likelihood decreased at iterations: {np.where(diffs < -1e-6)[0].tolist()}"
+    )
+
+
+def test_em_algo_improves_over_null():
+    """EM should achieve a strictly better log-likelihood than the null (lambda=0)."""
+    rng = np.random.default_rng(99)
+    M, J, cov = 80, 10, 30
+    X, *_ = sim_read_counts(m=M, j=J, coverage=cov, seed=5)
+    A = sim_annotations(m=M, a=3, seed=5)
+    pg = ProbGermline(X=X, Theta=A)
+    pg.mle_vaf()
+    ll_null = pg.complete_logll(lambdas=np.zeros(3))
+    loglls, lambdas_hat, betas_hat, kappa_hat = pg.em_algo(delta_logll=1e-3)
+    assert loglls[-1] >= ll_null - 1e-6
+    assert np.all(np.isfinite(lambdas_hat))
+    assert np.isfinite(kappa_hat) and kappa_hat > 0
+
+
+def test_em_algo_discriminates_germline_somatic():
+    """EM should learn a positive annotation weight when the annotation tags germline sites,
+    and posterior probabilities should be systematically higher for true germline sites."""
+    rng = np.random.default_rng(123)
+    M_germ, M_som, J, cov = 60, 60, 10, 30
+
+    # Germline sites: binomial(n, 0.5) reads across all clones
+    X_germ = np.zeros((M_germ, J, 2), dtype=np.int64)
+    for i in range(M_germ):
+        n = rng.poisson(cov, size=J)
+        a = rng.binomial(n, 0.5)
+        X_germ[i, :, 0] = n - a
+        X_germ[i, :, 1] = a
+
+    # Somatic sites: error-level reads in all clones except one carrier at ~50% VAF
+    X_som = np.zeros((M_som, J, 2), dtype=np.int64)
+    for i in range(M_som):
+        n = rng.poisson(cov, size=J)
+        a = rng.binomial(n, 1e-3)
+        j_mut = rng.integers(J)
+        a[j_mut] = rng.binomial(n[j_mut], 0.5)
+        X_som[i, :, 0] = n - a
+        X_som[i, :, 1] = a
+
+    X = np.vstack([X_germ, X_som])
+
+    # Annotation: germline sites draw from N(+2, 0.5), somatic from N(-2, 0.5)
+    Theta = np.vstack([
+        rng.normal(2.0, 0.5, size=(M_germ, 1)),
+        rng.normal(-2.0, 0.5, size=(M_som, 1)),
+    ])
+
+    pg = ProbGermline(X=X, Theta=Theta)
+    pg.mle_vaf()
+    loglls, lambdas_hat, betas_hat, kappa_hat = pg.em_algo(delta_logll=1e-3)
+
+    # Lambda should be positive: higher annotation → more likely germline
+    assert lambdas_hat[0] > 0, f"Expected positive lambda, got {lambdas_hat[0]:.4f}"
+
+    # Posterior probs (log scale) should be higher for germline sites on average
+    pp = pg.post_prob_poly(lambdas=lambdas_hat, betas=betas_hat, kappa=kappa_hat)
+    mean_pp_germ = np.mean(pp[:M_germ])
+    mean_pp_som = np.mean(pp[M_germ:])
+    assert mean_pp_germ > mean_pp_som, (
+        f"Germline posterior mean {mean_pp_germ:.3f} not greater than "
+        f"somatic posterior mean {mean_pp_som:.3f}"
+    )

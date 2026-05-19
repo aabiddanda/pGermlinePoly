@@ -27,7 +27,12 @@ logging.basicConfig(
 
 
 @click.command(
-    help="Inference of annotation-informed probability of germline polymorphism from somatic sequencing data.",
+    help=(
+        "Inference of annotation-informed probability of germline polymorphism "
+        "from somatic clonal sequencing data using an EM algorithm that jointly "
+        "estimates logistic annotation weights (lambda) and a Beta-Binomial error "
+        "concentration (kappa)."
+    ),
     context_settings=dict(show_default=True),
 )
 @click.option(
@@ -65,16 +70,7 @@ logging.basicConfig(
     required=False,
     default="L-BFGS-B",
     type=click.Choice(["L-BFGS-B", "Powell", "Nelder-Mead"], case_sensitive=True),
-    help="Optimization algorithm for EM-algorithm or naive optimization.",
-)
-@click.option(
-    "--naive",
-    "-n",
-    required=False,
-    default=True,
-    is_flag=True,
-    type=bool,
-    help="Numerical optimization of MLE parameters.",
+    help="Optimization algorithm for the EM M-step.",
 )
 @click.option(
     "--eps",
@@ -122,7 +118,6 @@ def main(
     config,
     nthreads,
     algo,
-    naive,
     eps,
     lrt,
     mutect2,
@@ -156,36 +151,30 @@ def main(
         logging.info(
             f"Extracting germline annotation from {germline_vcf} for inference..."
         )
-        check_samples(germline_vcf, samples=config["germline"])
+        germ_vcf_check = VCF(germline_vcf, samples=config["germline"])
+        check_samples(germ_vcf_check, samples=config["germline"])
         germ_vcf = VCF(germline_vcf, samples=config["germline"], threads=nthreads)
         germline_anno = create_germline_anno(germ_vcf)
         logging.info(f"Extracted germline annotation from {vcf} for inference!")
-        full_anno = np.vstack([germline_anno, anno]).T
+        full_anno = np.hstack([germline_anno[:, None], anno])
     else:
         full_anno = anno
 
-    p_germline = ProbGermline(X=clone_reads, Theta=full_anno)
+    p_germline = ProbGermline(X=clone_reads, Theta=full_anno, mu=eps)
     logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
     logging.info("Finished imputing missing annotations!")
     logging.info("Estimating Naive VAF from pooled reads...")
     p_germline.mle_vaf()
     logging.info("Finished VAF estimation from pooled reads!")
-    if naive:
-        logging.info("Starting Numerical MLE estimation!")
-        lambdas_hat = p_germline.naive_mle(
-            algo=algo, eps=eps, tol=1e-4, options={"disp": (out != "-")}
-        )
-        logging.info("Finished Numerical MLE estimation!")
-    else:
-        logging.info("Starting EM-algorithm...")
-        raise NotImplementedError("EM-algorithm is currently not setup!")
-        logging.info("Finished EM-algorithm!")
+    logging.info("Starting EM-algorithm...")
+    _, lambdas_hat, betas_hat, kappa_hat = p_germline.em_algo(algo=algo)
+    logging.info("Finished EM-algorithm!")
     logging.info("Estimating MLE VAF ...")
     ci_mle_p = p_germline.est_vaf_CI()
     logging.info("Finished estimating MLE VAF!")
     logging.info("Estimating posterior probability of germline heterozygosity...")
-    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat, eps=eps)
+    pp_germline_poly = p_germline.post_prob_poly(lambdas=lambdas_hat, betas=betas_hat, kappa=kappa_hat)
     if lrt:
         logging.info("Estimating the naive likelihood ratio ...")
         loglik_ratio = p_germline.loglik_ratio_het(eps=eps)
@@ -252,6 +241,7 @@ def main(
     else:
         for a, lhat in zip(config["annotations"], lambdas_hat):
             out_vcf.add_to_header(f"##lambda_{a}={lhat}")
+    out_vcf.add_to_header(f"##kappa_hat={kappa_hat}")
     out_vcf.add_to_header(f"##pGermlinePoly=run {' '.join(sys.argv[1:])}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()

@@ -5,15 +5,10 @@ import numpy as np
 import warnings
 from poly_utils import (
     loglik_ratio,
-    log_prior,
     var_loglik,
     geno_loglik,
-    complete_loglik,
-    incomplete_loglik,
-    posterior_poly,
-    logprob_somatic_v2,
-    posterior_poly_v2,
-    observed_loglik_site_v2,
+    log_posterior_germline,
+    observed_loglik_site,
     e_step_all,
     kappa_score,
     kappa_Q,
@@ -23,7 +18,7 @@ from scipy.stats import beta, binom, betabinom, chi2, norm, poisson, uniform
 
 
 class ProbGermline:
-    """Posterior probability of germline polymorphism from clonal somatic data (v2 model)."""
+    """Posterior probability of germline polymorphism from clonal somatic data."""
 
     def __init__(self, X, Theta, Phi=None, kappa=100.0, mu=1e-3):
         """Initialize the class.
@@ -147,7 +142,7 @@ class ProbGermline:
         logit_pi  = self._compute_logit_pi(lambdas, betas)   # (M,)
         post_k = np.zeros(self.M)
         for k in range(self.M):
-            post_k[k] = posterior_poly_v2(
+            post_k[k] = log_posterior_germline(
                 ax=self.X[k, :, 1],
                 rx=self.X[k, :, 0],
                 logit_phi=logit_phi[k],
@@ -192,7 +187,7 @@ class ProbGermline:
 
     def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double"),
                         betas=None, kappa=None, **kwargs):
-        """Observed data log-likelihood sum_k log P(A_k, R_k) under the v2 model.
+        """Observed data log-likelihood sum_k log P(A_k, R_k) under the current model.
 
         Arguments:
             - lambdas: site-level annotation weights (L,)
@@ -208,7 +203,7 @@ class ProbGermline:
         logit_pi  = self._compute_logit_pi(lambdas, betas)   # (M,)
         logll = 0.0
         for k in range(self.M):
-            logll += observed_loglik_site_v2(
+            logll += observed_loglik_site(
                 ax=self.X[k, :, 1],
                 rx=self.X[k, :, 0],
                 logit_phi=logit_phi[k],
@@ -235,7 +230,7 @@ class ProbGermline:
         return opt_res.x
 
     # ------------------------------------------------------------------
-    # EM algorithm (v2 model)
+    # EM algorithm (current model)
     # ------------------------------------------------------------------
 
     def _e_step(self, lambdas, betas, kappa):
@@ -309,7 +304,7 @@ class ProbGermline:
         delta_logll=1e-4,
         **kwargs,
     ):
-        """EM algorithm estimating (lambda, beta, kappa) for the v2 model.
+        """EM algorithm estimating (lambda, beta, kappa) for the current model.
 
         Arguments:
             - lambdas: initial site-level weights (L,); None → zeros

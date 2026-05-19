@@ -18,7 +18,7 @@ def test_initialization(m, j):
 @pytest.mark.parametrize("c", [5, 10, 30])
 def test_rhos_germline(m, j, c):
     """Test estimation of rhos."""
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, *_ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     betaoverdisp = BetaOverdispersion(X=X)
     rhos = betaoverdisp.estimate_rhos()
     assert rhos.ndim == 1
@@ -33,7 +33,7 @@ def test_rhos_germline(m, j, c):
 @pytest.mark.parametrize("v", [0.05, 0.1, 0.25])
 def test_rhos_somatic(m, j, c, p, v):
     """Test estimation of rhos."""
-    X, somatic = sim_read_counts(m=m, j=j, coverage=c, p_somatic=p, vaf=v, seed=m + j)
+    X, somatic, _ = sim_read_counts(m=m, j=j, coverage=c, p_somatic=p, vaf=v, seed=m + j)
     betaoverdisp = BetaOverdispersion(X=X)
     rhos = betaoverdisp.estimate_rhos()
     assert rhos.ndim == 1

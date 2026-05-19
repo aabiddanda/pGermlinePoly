@@ -196,7 +196,7 @@ cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
 
 
 # ---------------------------------------------------------------------------
-# v2 model primitives (somatic_likelihood_v2.pdf)
+# Beta-Binomial error model primitives
 # ---------------------------------------------------------------------------
 
 cdef double log_logistic(double x):
@@ -219,7 +219,7 @@ cdef double log_betabinom(long a, long n, double alpha, double beta):
             + lgamma(alpha + beta) - lgamma(alpha) - lgamma(beta))
 
 
-cdef double logprob_somatic_clone_v2(long a, long n, double logit_phi,
+cdef double logprob_somatic_clone(long a, long n, double logit_phi,
                                       double mu, double kappa):
     """Per-clone somatic log-likelihood P(a_jk, r_jk | z=somatic, phi_j, mu, kappa) (Eq. 1)."""
     cdef double log_phi   = log_logistic(logit_phi)
@@ -229,14 +229,14 @@ cdef double logprob_somatic_clone_v2(long a, long n, double logit_phi,
     return logaddexp(log_phi + log_bin, log1m_phi + log_bb)
 
 
-cpdef double logprob_somatic_v2(long[:] ax, long[:] rx,
+cpdef double logprob_somatic_bb(long[:] ax, long[:] rx,
                                  double[:] logit_phi,
                                  double mu=1e-3, double kappa=100.0):
     """Full somatic log-likelihood across all clones (Eq. 2)."""
     cdef int j, J = ax.size
     cdef double ll = 0.0
     for j in range(J):
-        ll += logprob_somatic_clone_v2(ax[j], ax[j] + rx[j], logit_phi[j], mu, kappa)
+        ll += logprob_somatic_clone(ax[j], ax[j] + rx[j], logit_phi[j], mu, kappa)
     return ll
 
 
@@ -251,7 +251,7 @@ cpdef double log_gamma_jk(long a, long n, double logit_phi,
     return log_phi + log_bin - log_denom
 
 
-cpdef double posterior_poly_v2(long[:] ax, long[:] rx,
+cpdef double log_posterior_germline(long[:] ax, long[:] rx,
                                 double[:] logit_phi, double logit_pi,
                                 double mu, double kappa):
     """Log posterior P(z_k = het | A_k, R_k) (Eq. 9)."""
@@ -261,13 +261,13 @@ cpdef double posterior_poly_v2(long[:] ax, long[:] rx,
     cdef double log_p_som   = 0.0
     cdef int j, J = ax.size
     for j in range(J):
-        log_p_som += logprob_somatic_clone_v2(ax[j], ax[j] + rx[j], logit_phi[j], mu, kappa)
+        log_p_som += logprob_somatic_clone(ax[j], ax[j] + rx[j], logit_phi[j], mu, kappa)
     cdef double log_num   = log_pi + log_p_het
     cdef double log_denom = logaddexp(log_num, log1m_pi + log_p_som)
     return log_num - log_denom
 
 
-cpdef double observed_loglik_site_v2(long[:] ax, long[:] rx,
+cpdef double observed_loglik_site(long[:] ax, long[:] rx,
                                       double[:] logit_phi, double logit_pi,
                                       double mu, double kappa):
     """Observed data log-likelihood for a single site log P(A_k, R_k)."""
@@ -277,7 +277,7 @@ cpdef double observed_loglik_site_v2(long[:] ax, long[:] rx,
     cdef double log_p_som = 0.0
     cdef int j, J = ax.size
     for j in range(J):
-        log_p_som += logprob_somatic_clone_v2(ax[j], ax[j] + rx[j], logit_phi[j], mu, kappa)
+        log_p_som += logprob_somatic_clone(ax[j], ax[j] + rx[j], logit_phi[j], mu, kappa)
     return logaddexp(log_pi + log_p_het, log1m_pi + log_p_som)
 
 
@@ -306,7 +306,7 @@ cpdef void e_step_all(long[:, :, :] X,
         # log P(A_k, R_k | somatic)
         log_p_som_k = 0.0
         for j in range(J):
-            log_p_som_k += logprob_somatic_clone_v2(
+            log_p_som_k += logprob_somatic_clone(
                 X[k, j, 1], X[k, j, 0] + X[k, j, 1], logit_phi[k, j], mu, kappa
             )
 
