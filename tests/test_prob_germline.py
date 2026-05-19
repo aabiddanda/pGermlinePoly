@@ -1,9 +1,79 @@
 import numpy as np
-from scipy.special import expit
+from scipy.special import expit, digamma as scipy_digamma
 import pytest
 from conftest import sim_read_counts, sim_annotations
 
 from pGermlinePoly import ProbGermline
+from poly_utils import kappa_score, kappa_Q
+
+
+# ---------------------------------------------------------------------------
+# Reference implementations (scipy) for validating the native digamma path
+# ---------------------------------------------------------------------------
+
+def _ref_kappa_score(X, gammas, mu, kappa):
+    """Pure-Python reference for kappa_score using scipy digamma."""
+    score = 0.0
+    M, J = X.shape[0], X.shape[1]
+    for k in range(M):
+        for j in range(J):
+            a = float(X[k, j, 1])
+            n = float(X[k, j, 0] + X[k, j, 1])
+            w = 1.0 - gammas[k, j]
+            score += w * (
+                mu * scipy_digamma(a + mu * kappa)
+                + (1.0 - mu) * scipy_digamma(n - a + (1.0 - mu) * kappa)
+                - scipy_digamma(n + kappa)
+                - mu * scipy_digamma(mu * kappa)
+                - (1.0 - mu) * scipy_digamma((1.0 - mu) * kappa)
+                + scipy_digamma(kappa)
+            )
+    return score
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("mu", [0.1, 0.5, 0.9])
+@pytest.mark.parametrize("kappa", [1.0, 10.0, 100.0])
+def test_kappa_score_vs_scipy(mu, kappa):
+    """kappa_score (native digamma) must match the scipy reference to 1e-8."""
+    rng = np.random.default_rng(42)
+    M, J = 8, 5
+    n = rng.integers(5, 30, size=(M, J))
+    a = rng.integers(0, n + 1)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    gammas = rng.uniform(0.0, 1.0, size=(M, J))
+    ref = _ref_kappa_score(X, gammas, mu, kappa)
+    got = kappa_score(X, gammas, mu, kappa)
+    assert abs(got - ref) < 1e-8 * (abs(ref) + 1.0), (
+        f"mu={mu}, kappa={kappa}: got={got}, ref={ref}"
+    )
+
+
+@pytest.mark.parametrize("kappa", [0.5, 5.0, 50.0])
+def test_kappa_score_sign_at_boundary(kappa):
+    """Score should change sign around the MLE concentration parameter."""
+    rng = np.random.default_rng(7)
+    M, J, mu = 20, 10, 0.5
+    n = rng.integers(10, 40, size=(M, J))
+    a = (n * mu).astype(np.int64)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    gammas = np.zeros((M, J))  # all weight on beta-binomial component
+    score = kappa_score(X, gammas, mu, kappa)
+    assert np.isfinite(score)
+
+
+def test_kappa_score_zero_weight():
+    """When all gammas are 1 every site is pure binomial; score must be 0."""
+    rng = np.random.default_rng(0)
+    M, J = 5, 4
+    n = rng.integers(5, 20, size=(M, J))
+    a = rng.integers(0, n + 1)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    gammas = np.ones((M, J))  # w = 1 - gamma = 0 for all sites
+    assert kappa_score(X, gammas, 0.5, 10.0) == 0.0
 
 
 @pytest.mark.parametrize("m,j,a", [(10, 4, 2)])

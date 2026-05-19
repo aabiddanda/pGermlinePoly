@@ -7,9 +7,25 @@ from libc.math cimport exp, expm1, log, log1p, log10, lgamma
 cdef extern from "math.h":
     float INFINITY
 
-cdef extern from *:
-    """extern double digamma(double);"""
-    double digamma(double x) nogil
+cdef double digamma(double x) nogil:
+    """Digamma function via recurrence to x>=6, then asymptotic expansion."""
+    cdef double result = 0.0
+    cdef double y, y2
+    # Shift x up: psi(x) = psi(x+1) - 1/x
+    while x < 6.0:
+        result -= 1.0 / x
+        x += 1.0
+    # Asymptotic (Stirling) series: psi(x) ~ ln(x) - 1/(2x) - B_{2n}/(2n*x^{2n})
+    # Coefficients: -1/12x^2 + 1/120x^4 - 1/252x^6 + 1/240x^8 - 1/132x^10
+    y = 1.0 / x
+    y2 = y * y
+    result += (log(x) - 0.5 * y
+               - y2 * (1.0/12.0
+               - y2 * (1.0/120.0
+               - y2 * (1.0/252.0
+               - y2 * (1.0/240.0
+               - y2 / 132.0)))))
+    return result
 
 cpdef double logaddexp(double a, double b):
     """Log-add exponential for two values."""
@@ -331,10 +347,7 @@ cpdef double kappa_Q(long[:, :, :] X, double[:, :] gammas,
 
 cpdef double kappa_score(long[:, :, :] X, double[:, :] gammas,
                           double mu, double kappa):
-    """Score dQ/dkappa for Brent's method (Eq. 14).
-
-    Uses digamma and gammaln from scipy.special.cython_special.
-    """
+    """Score dQ/dkappa for Brent's method (Eq. 14)."""
     cdef int k, j, M = X.shape[0], J = X.shape[1]
     cdef double score = 0.0, a, n, w
     for k in range(M):
