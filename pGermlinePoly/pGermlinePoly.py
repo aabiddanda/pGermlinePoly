@@ -1,8 +1,11 @@
 """Inference and simulation of germline polymorphism in clonal sequencing data."""
 
+import logging
 import msprime
 import numpy as np
 import warnings
+
+logger = logging.getLogger(__name__)
 from poly_utils import (
     loglik_ratio,
     var_loglik,
@@ -329,8 +332,12 @@ class ProbGermline:
 
         loglls = [self.complete_logll(lambdas=lambdas, betas=betas, kappa=kappa)]
         cur_delta = 1e9
+        iteration = 0
+        logger.info("EM iter %d  loglik=%.6f", iteration, loglls[-1])
 
         while cur_delta >= delta_logll:
+            iteration += 1
+
             # E-step
             eta, gammas = self._e_step(lambdas, betas, kappa)
 
@@ -345,7 +352,15 @@ class ProbGermline:
                 warnings.warn("Observed log-likelihood decreased in EM iteration.")
             loglls.append(new_ll)
             cur_delta = abs(loglls[-1] - loglls[-2])
+            logger.info(
+                "EM iter %d  loglik=%.6f  delta=%.2e  kappa=%.4f",
+                iteration, new_ll, cur_delta, kappa,
+            )
 
+        logger.info(
+            "EM converged in %d iterations  loglik=%.6f  kappa=%.4f",
+            iteration, loglls[-1], kappa,
+        )
         self.kappa = kappa
         return np.array(loglls), lambdas, betas, kappa
 
