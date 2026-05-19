@@ -11,28 +11,52 @@ from poly_utils import (
     complete_loglik,
     incomplete_loglik,
     posterior_poly,
+    logprob_somatic_v2,
+    posterior_poly_v2,
+    observed_loglik_site_v2,
+    e_step_all,
+    kappa_score,
+    kappa_Q,
 )
 from scipy.optimize import minimize, minimize_scalar, brentq
 from scipy.stats import beta, binom, betabinom, chi2, norm, poisson, uniform
 
 
 class ProbGermline:
-    """Class to estimate the posterior probability of germline polymorphism from clonal somatic data."""
+    """Posterior probability of germline polymorphism from clonal somatic data (v2 model)."""
 
-    def __init__(self, X, Theta):
+    def __init__(self, X, Theta, Phi=None, kappa=100.0, mu=1e-3):
         """Initialize the class.
 
         Arguments:
-          - X (`np.array`): a M x J x 2 matrix of read counts
-          - Theta (`np.array`): The M x A matrix of annotations
+          - X (`np.array`): M x J x 2 read-count matrix (ref, alt)
+          - Theta (`np.array`): M x L site-level annotation matrix
+          - Phi (`np.array`): M x J x B clone-level annotation matrix, or None
+          - kappa (`float`): initial concentration for the Beta error prior
+          - mu (`float`): fixed mean sequencing error rate (default 1e-3)
         """
         assert X.ndim == 3
         self.M, self.J, _ = X.shape
-        self.X = X
+        self.X = np.ascontiguousarray(X, dtype=np.int64)
         assert Theta.ndim == 2
-        M, self.A = Theta.shape
+        M, self.L = Theta.shape
         assert M == self.M
         self.Theta = Theta
+        self.A = self.L  # backward-compat alias
+
+        if Phi is not None:
+            assert Phi.ndim == 3
+            assert Phi.shape[0] == self.M and Phi.shape[1] == self.J
+            self.Phi = Phi
+            self.B = Phi.shape[2]
+            self.Phi_bar = Phi.mean(axis=1)  # M x B clone-average
+        else:
+            self.Phi = None
+            self.B = 0
+            self.Phi_bar = None
+
+        self.kappa = float(kappa)
+        self.mu = float(mu)
         self.vaf = None
         self.logl_vaf = None
 
@@ -79,37 +103,57 @@ class ProbGermline:
             )
         return llr
 
-    def prior_poly(self, lambdas=np.array([0.0, 0.0], dtype="double")):
-        """Prior probability of a germline polymorphism."""
-        assert lambdas.size == self.A
-        assert lambdas.ndim == 1
-        pi_k = np.zeros(self.M)
-        for i in range(self.M):
-            pi_k[i] = log_prior(lambdas, self.Theta[i, :])
-        return pi_k
+    def _compute_logit_phi(self, lambdas, betas):
+        """Compute logit(phi_jk) = Theta_k @ lambdas + Phi_jk @ betas (M x J)."""
+        site = self.Theta @ lambdas  # (M,)
+        if self.B > 0 and betas is not None and betas.size > 0:
+            clone = np.einsum('mjb,b->mj', self.Phi, betas)  # (M, J)
+            logit = site[:, None] + clone
+        else:
+            logit = np.broadcast_to(site[:, None], (self.M, self.J)).copy()
+        return np.ascontiguousarray(logit, dtype=np.float64)
 
-    def post_prob_poly(self, lambdas=np.array([0.0, 0.0], dtype="double"), **kwargs):
-        """Posterior probability of being germline polymorphic.
+    def _compute_logit_pi(self, lambdas, betas):
+        """Compute logit(pi_k) = Theta_k @ lambdas + Phi_bar_k @ betas (M,)."""
+        logit = self.Theta @ lambdas  # (M,)
+        if self.B > 0 and betas is not None and betas.size > 0:
+            logit = logit + self.Phi_bar @ betas
+        return np.ascontiguousarray(logit, dtype=np.float64)
+
+    def prior_poly(self, lambdas=np.array([0.0, 0.0], dtype="double")):
+        """Log prior probability of germline heterozygosity under the logistic model."""
+        assert lambdas.size == self.L
+        assert lambdas.ndim == 1
+        logit_pi = self._compute_logit_pi(lambdas, np.zeros(self.B))
+        return -np.log1p(np.exp(-logit_pi))  # log sigmoid — shape (M,)
+
+    def post_prob_poly(self, lambdas=np.array([0.0, 0.0], dtype="double"),
+                       betas=None, kappa=None, **kwargs):
+        """Log posterior P(z_k = het | A_k, R_k) for all sites (Eq. 9).
 
         Arguments:
-            - lambdas (`np.array`): weight parameters for logistic priors.
-
-        Returns:
-            - post_k (`np.array`): posterior probability (logged) of site being germline polymorphic.
-
+            - lambdas: site-level annotation weights (L,)
+            - betas: clone-level annotation weights (B,); None → zeros
+            - kappa: error concentration; None → self.kappa
         """
-        assert lambdas.size == self.A
+        assert lambdas.size == self.L
         assert np.all(~np.isnan(lambdas))
-        assert self.vaf is not None
+        if betas is None:
+            betas = np.zeros(self.B)
+        if kappa is None:
+            kappa = self.kappa
+
+        logit_phi = self._compute_logit_phi(lambdas, betas)  # (M, J)
+        logit_pi  = self._compute_logit_pi(lambdas, betas)   # (M,)
         post_k = np.zeros(self.M)
-        for i in range(self.M):
-            post_k[i] = posterior_poly(
-                ax=self.X[i, :, 1],
-                rx=self.X[i, :, 0],
-                lambdas=lambdas,
-                anno=self.Theta[i, :],
-                alpha=2 * self.vaf[i],
-                **kwargs,
+        for k in range(self.M):
+            post_k[k] = posterior_poly_v2(
+                ax=self.X[k, :, 1],
+                rx=self.X[k, :, 0],
+                logit_phi=logit_phi[k],
+                logit_pi=logit_pi[k],
+                mu=self.mu,
+                kappa=kappa,
             )
         return post_k
 
@@ -146,92 +190,169 @@ class ProbGermline:
             ci_mle_p[i, 2] = upper_CI
         return ci_mle_p
 
-    def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double"), **kwargs):
-        """Compute the complete data log-likelihood.
+    def complete_logll(self, lambdas=np.array([0.0, 0.0], dtype="double"),
+                        betas=None, kappa=None, **kwargs):
+        """Observed data log-likelihood sum_k log P(A_k, R_k) under the v2 model.
 
         Arguments:
-            - lambdas (`np.array`): weight parameters for logistic priors.
-        Returns:
-            - logll (`float`): log-likelihood of the model.
-
+            - lambdas: site-level annotation weights (L,)
+            - betas: clone-level annotation weights (B,); None → zeros
+            - kappa: error concentration; None → self.kappa
         """
-        assert lambdas.size == self.A
-        assert self.vaf is not None
-        logll = complete_loglik(
-            X=self.X, A=self.Theta, lambdas=lambdas, alpha=2 * self.vaf, **kwargs
-        )
+        assert lambdas.size == self.L
+        if betas is None:
+            betas = np.zeros(self.B)
+        if kappa is None:
+            kappa = self.kappa
+        logit_phi = self._compute_logit_phi(lambdas, betas)  # (M, J)
+        logit_pi  = self._compute_logit_pi(lambdas, betas)   # (M,)
+        logll = 0.0
+        for k in range(self.M):
+            logll += observed_loglik_site_v2(
+                ax=self.X[k, :, 1],
+                rx=self.X[k, :, 0],
+                logit_phi=logit_phi[k],
+                logit_pi=logit_pi[k],
+                mu=self.mu,
+                kappa=kappa,
+            )
         return logll
 
-    def naive_mle(self, eps=1e-3, algo="L-BFGS-B", **kwargs):
-        """Naive optimization of the model log-likelihood.
-
-        NOTE: this is not recommended for large models and largely is implemented for testing.
-
-        Arguments:
-            - algo (`string`): Type of optimization algorithm for likelihood.
+    def naive_mle(self, algo="L-BFGS-B", **kwargs):
+        """Direct MLE of site-level weights lambda (betas fixed at 0).
 
         Returns:
-            - lambda_hat (`np.array`): weight parameters for priors
+            - lambda_hat (`np.array`): site-level annotation weights (L,)
         """
         assert algo in ["L-BFGS-B", "Powell", "Nelder-Mead"]
         opt_res = minimize(
-            lambda x: -self.complete_logll(lambdas=x, eps=eps),
-            x0=np.zeros(self.A),
+            lambda x: -self.complete_logll(lambdas=x),
+            x0=np.zeros(self.L),
             method=algo,
-            bounds=[(-20, 20) for _ in range(self.A)],
+            bounds=[(-20, 20) for _ in range(self.L)],
             **kwargs,
         )
-        lambda_hat = opt_res.x
-        return lambda_hat
+        return opt_res.x
+
+    # ------------------------------------------------------------------
+    # EM algorithm (v2 model)
+    # ------------------------------------------------------------------
+
+    def _e_step(self, lambdas, betas, kappa):
+        """E-step: return eta (M,) and gammas (M, J) in probability space."""
+        logit_phi = self._compute_logit_phi(lambdas, betas)  # (M, J) contiguous float64
+        logit_pi  = self._compute_logit_pi(lambdas, betas)   # (M,)
+        eta    = np.zeros(self.M, dtype=np.float64)
+        gammas = np.zeros((self.M, self.J), dtype=np.float64)
+        e_step_all(self.X, logit_phi, logit_pi, self.mu, kappa, eta, gammas)
+        return eta, gammas
+
+    def _m_step_lambda_beta(self, eta, gammas, lambdas0, betas0, algo="L-BFGS-B"):
+        """M-step for (lambda, beta) via weighted logistic regression (Eq. 12)."""
+        params0 = np.concatenate([lambdas0, betas0])
+        L, B = self.L, self.B
+        Theta = self.Theta  # (M, L)
+        Phi   = self.Phi    # (M, J, B) or None
+        Phi_bar = self.Phi_bar  # (M, B) or None
+
+        def neg_Q(params):
+            lam = params[:L]
+            bet = params[L:]
+
+            logit_pi  = Theta @ lam
+            if B > 0:
+                logit_pi = logit_pi + Phi_bar @ bet
+            # phi per clone
+            site_part = (Theta @ lam)[:, None]   # (M, 1)
+            if B > 0:
+                clone_part = np.einsum('mjb,b->mj', Phi, bet)  # (M, J)
+                logit_phi = site_part + clone_part
+            else:
+                logit_phi = np.broadcast_to(site_part, (self.M, self.J))
+
+            log_pi    = -np.log1p(np.exp(-logit_pi))
+            log1m_pi  = -np.log1p(np.exp( logit_pi))
+            log_phi   = -np.log1p(np.exp(-logit_phi))
+            log1m_phi = -np.log1p(np.exp( logit_phi))
+
+            site_term  = np.dot(eta, log_pi) + np.dot(1.0 - eta, log1m_pi)
+            clone_term = (gammas * log_phi + (1.0 - gammas) * log1m_phi).sum()
+            return -(site_term + clone_term)
+
+        bounds = [(-20.0, 20.0)] * (L + B)
+        opt = minimize(neg_Q, params0, method=algo, bounds=bounds,
+                       tol=1e-8, options={"disp": False})
+        return opt.x[:L], opt.x[L:]
+
+    def _m_step_kappa(self, gammas):
+        """M-step for kappa via Brent's method on the score function (Eq. 13-14).
+
+        The score dQ/dkappa is evaluated via the Cython kappa_score function,
+        which internally uses digamma from scipy.special.cython_special.
+        """
+        score_fn = lambda k: kappa_score(self.X, gammas, self.mu, k)
+        lo, hi = 1e-2, 1e6
+        try:
+            if score_fn(lo) * score_fn(hi) >= 0:
+                return self.kappa  # no sign change — keep current value
+            kappa_hat = brentq(score_fn, lo, hi, xtol=1e-6, rtol=1e-6)
+        except ValueError:
+            kappa_hat = self.kappa
+        return float(kappa_hat)
 
     def em_algo(
         self,
-        lambdas=np.array([0.0, 0.0], dtype="double"),
+        lambdas=None,
+        betas=None,
+        kappa=None,
         algo="L-BFGS-B",
         delta_logll=1e-4,
-        log=True,
         **kwargs,
     ):
-        """EM-algorithm to estimate parameters for prior of germline polymorphism.
+        """EM algorithm estimating (lambda, beta, kappa) for the v2 model.
 
         Arguments:
-            - lambdas (`np.array`): starting weights for annotations
-            - a0 (`float`): starting float
+            - lambdas: initial site-level weights (L,); None → zeros
+            - betas: initial clone-level weights (B,); None → zeros
+            - kappa: initial error concentration; None → self.kappa
+            - algo: optimizer for the (lambda, beta) M-step
+            - delta_logll: convergence threshold on observed log-likelihood
 
+        Returns:
+            - loglls (`np.array`): observed log-likelihood trace
+            - lambdas_hat, betas_hat, kappa_hat: estimated parameters
         """
-        assert lambdas.size == self.A
-        lambdas_prev = lambdas
-        loglls = []
-        loglls.append(self.complete_logll(lambdas=lambdas_prev))
+        if lambdas is None:
+            lambdas = np.zeros(self.L)
+        if betas is None:
+            betas = np.zeros(self.B)
+        if kappa is None:
+            kappa = self.kappa
+
+        assert lambdas.size == self.L
+        assert betas.size == self.B
+
+        loglls = [self.complete_logll(lambdas=lambdas, betas=betas, kappa=kappa)]
         cur_delta = 1e9
+
         while cur_delta >= delta_logll:
-            # E-step: estimate the expected probability using prev params
-            gammas = self.post_prob_poly(lambdas=lambdas_prev)
-            # M-step: maximize the parameters
-            opt_res = minimize(
-                lambda x: (
-                    -incomplete_loglik(
-                        X=self.X,
-                        A=self.Theta,
-                        lambdas=x,
-                        alpha=self.vaf,
-                        gammas=gammas,
-                        **kwargs,
-                    )
-                ),
-                x0=np.zeros(self.A),
-                method=algo,
-                bounds=[(-20.0, 20.0) for _ in range(self.A)],
-                tol=1e-8,
-                options={"disp": False},
-            )
-            lambdas_hat = opt_res.x
-            loglls.append(self.complete_logll(lambdas=lambdas_hat))
-            if loglls[-1] >= loglls[-2]:
-                warnings.warn("Incomplete log-likelihood is not increasing!")
-            cur_delta = np.abs(loglls[-1] - loglls[-2])
-            lambdas_prev = lambdas_hat
-        return np.array(loglls), lambdas_prev
+            # E-step
+            eta, gammas = self._e_step(lambdas, betas, kappa)
+
+            # M-step: logistic weights
+            lambdas, betas = self._m_step_lambda_beta(eta, gammas, lambdas, betas, algo=algo)
+
+            # M-step: kappa (Brent on Cython score function)
+            kappa = self._m_step_kappa(gammas)
+
+            new_ll = self.complete_logll(lambdas=lambdas, betas=betas, kappa=kappa)
+            if new_ll < loglls[-1] - 1e-8:
+                warnings.warn("Observed log-likelihood decreased in EM iteration.")
+            loglls.append(new_ll)
+            cur_delta = abs(loglls[-1] - loglls[-2])
+
+        self.kappa = kappa
+        return np.array(loglls), lambdas, betas, kappa
 
 
 class MutectLOD:

@@ -11,7 +11,6 @@ def test_initialization(m, j, a):
     """Test that the intialization of the class will go well."""
     X = np.zeros(shape=(m, j, 2))
     A = np.zeros(shape=(m, a))
-    print(X.shape, A.shape)
     prob_germline = ProbGermline(X=X, Theta=A)
     assert prob_germline.J == j
     assert prob_germline.M == m
@@ -37,7 +36,7 @@ def test_impute_anno():
 @pytest.mark.parametrize("c", [5, 10, 30])
 @pytest.mark.parametrize("a", [1, 5, 10])
 def test_est_vaf(m, j, c, a):
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     vaf = np.array([X[i, :, 1].sum() / X[i, :, :].sum() for i in range(m)])
     prob_germline = ProbGermline(X=X, Theta=A)
@@ -51,7 +50,7 @@ def test_est_vaf(m, j, c, a):
 @pytest.mark.parametrize("c", [5, 10, 30])
 @pytest.mark.parametrize("a", [1, 5, 10])
 def test_est_vaf_nonnaive(m, j, c, a):
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     vaf = np.array([X[i, :, 1].sum() / X[i, :, :].sum() for i in range(m)])
     prob_germline = ProbGermline(X=X, Theta=A)
@@ -66,7 +65,7 @@ def test_est_vaf_nonnaive(m, j, c, a):
 @pytest.mark.parametrize("a", [5])
 @pytest.mark.parametrize("v", [0.1, 0.25])
 def test_vaf_est_all_somatic(m, j, c, a, v):
-    X, somatic = sim_read_counts(m=m, j=j, coverage=c, p_somatic=1.0, vaf=v, seed=m + j)
+    X, somatic, _ = sim_read_counts(m=m, j=j, coverage=c, p_somatic=1.0, vaf=v, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -81,7 +80,7 @@ def test_vaf_est_all_somatic(m, j, c, a, v):
 @pytest.mark.parametrize("c", [5, 10, 30])
 @pytest.mark.parametrize("a", [1, 5, 10])
 def test_est_vaf_CI(m, j, c, a):
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     vaf = np.array([X[i, :, 1].sum() / X[i, :, :].sum() for i in range(m)])
     prob_germline = ProbGermline(X=X, Theta=A)
@@ -97,7 +96,7 @@ def test_est_vaf_CI(m, j, c, a):
 @pytest.mark.parametrize("c", [5, 10, 30])
 @pytest.mark.parametrize("a", [1, 5, 10])
 def test_llr_het(m, j, c, a):
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -113,7 +112,7 @@ def test_llr_het(m, j, c, a):
 @pytest.mark.parametrize("p", [0.0, 0.1, 0.25])
 @pytest.mark.parametrize("v", [0.05, 0.1, 0.25])
 def test_llr_het_somatic(m, j, c, a, p, v):
-    X, somatic = sim_read_counts(m=m, j=j, coverage=c, p_somatic=p, vaf=v, seed=m + j)
+    X, somatic, _ = sim_read_counts(m=m, j=j, coverage=c, p_somatic=p, vaf=v, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -129,7 +128,7 @@ def test_llr_het_somatic(m, j, c, a, p, v):
 @pytest.mark.parametrize("c", [5, 10, 30])
 @pytest.mark.parametrize("a", [1, 5, 10])
 def test_prior_poly(m, j, c, a):
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -144,7 +143,7 @@ def test_prior_poly(m, j, c, a):
 @pytest.mark.parametrize("c", [5, 10, 30, 50])
 @pytest.mark.parametrize("a", [1, 5, 10])
 def test_posterior_prob_poly(m, j, c, a):
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -181,7 +180,7 @@ def test_posterior_prob_even():
 @pytest.mark.parametrize("a", [1, 5, 10])
 def test_complete_logll(m, j, c, a):
     """Test the computational of the likelihood of the observed data given lambdas."""
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -197,7 +196,7 @@ def test_complete_logll(m, j, c, a):
 @pytest.mark.parametrize("a", [1, 5, 10])
 def test_infer_weights(m, j, c, a):
     """Test a naive optimization of the weights for all SNPs."""
-    X, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
     A = sim_annotations(m=m, a=a, seed=m + a)
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
@@ -222,8 +221,8 @@ def test_true_effect_weights(m, j, c, a):
     # Choose the top 10 percent arbitrarily ...
     q = np.quantile(ps, 0.9)
     ixs = np.where(ps >= q)[0]
-    X_neutral, _ = sim_read_counts(m=m - ixs.size, j=j, coverage=c, seed=m + j)
-    X_somatic, _ = sim_read_counts(m=ixs.size, j=j, coverage=c, vaf=0.1, seed=m + j + a)
+    X_neutral, _, _ = sim_read_counts(m=m - ixs.size, j=j, coverage=c, seed=m + j)
+    X_somatic, _, _ = sim_read_counts(m=ixs.size, j=j, coverage=c, vaf=0.1, seed=m + j + a)
     X = np.vstack([X_neutral, X_somatic])
     assert X.ndim == 3
     assert X.shape[0] == m
@@ -231,8 +230,10 @@ def test_true_effect_weights(m, j, c, a):
     prob_germline = ProbGermline(X=X, Theta=A)
     prob_germline.impute_anno()
     prob_germline.mle_vaf()
+    assert np.all(prob_germline.vaf[ixs] > 0)
     lambdas_hat = prob_germline.naive_mle()
     lambdas = np.zeros(a)
     logll_null = prob_germline.complete_logll(lambdas=lambdas)
     logll_mle = prob_germline.complete_logll(lambdas=lambdas_hat)
     assert lambdas_hat[ix] < 0
+    assert logll_mle > logll_null
