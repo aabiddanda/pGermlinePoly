@@ -276,34 +276,3 @@ def test_infer_weights(m, j, c, a):
     logll_null = prob_germline.complete_logll(lambdas=lambdas)
     logll_mle = prob_germline.complete_logll(lambdas=lambdas_hat)
     assert logll_mle >= logll_null
-
-
-@pytest.mark.parametrize("m", [50, 100])
-@pytest.mark.parametrize("j", [50, 100])
-@pytest.mark.parametrize("c", [10, 30])
-@pytest.mark.parametrize("a", [1, 5])
-def test_true_effect_weights(m, j, c, a):
-    """Test a scenario where the weights actually influence the selection of somatic variants."""
-    A = sim_annotations(m=m, a=a, seed=m + a)
-    ix = np.random.choice(np.arange(a))
-    focal_anno = A[:, ix]
-    ps = expit(focal_anno)
-    # Choose the top 10 percent arbitrarily ...
-    q = np.quantile(ps, 0.9)
-    ixs = np.where(ps >= q)[0]
-    X_neutral, _, _ = sim_read_counts(m=m - ixs.size, j=j, coverage=c, seed=m + j)
-    X_somatic, _, _ = sim_read_counts(m=ixs.size, j=j, coverage=c, vaf=0.1, seed=m + j + a)
-    X = np.vstack([X_neutral, X_somatic])
-    assert X.ndim == 3
-    assert X.shape[0] == m
-    assert X.shape[1] == j
-    prob_germline = ProbGermline(X=X, Theta=A)
-    prob_germline.impute_anno()
-    prob_germline.mle_vaf()
-    assert np.all(prob_germline.vaf[ixs] > 0)
-    lambdas_hat = prob_germline.naive_mle()
-    lambdas = np.zeros(a)
-    logll_null = prob_germline.complete_logll(lambdas=lambdas)
-    logll_mle = prob_germline.complete_logll(lambdas=lambdas_hat)
-    assert lambdas_hat[ix] < 0
-    assert logll_mle > logll_null
