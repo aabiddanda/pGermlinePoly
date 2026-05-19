@@ -81,6 +81,14 @@ logging.basicConfig(
     help="Error rate for read-level alleles.",
 )
 @click.option(
+    "--delta",
+    "-d",
+    required=False,
+    default=1e-4,
+    type=float,
+    help="EM convergence threshold (absolute change in log-likelihood).",
+)
+@click.option(
     "--lrt",
     required=False,
     default=False,
@@ -119,6 +127,7 @@ def main(
     nthreads,
     algo,
     eps,
+    delta,
     lrt,
     mutect2,
     betabinomial,
@@ -168,7 +177,7 @@ def main(
     p_germline.mle_vaf()
     logging.info("Finished VAF estimation from pooled reads!")
     logging.info("Starting EM-algorithm...")
-    _, lambdas_hat, betas_hat, kappa_hat = p_germline.em_algo(algo=algo)
+    _, lambdas_hat, betas_hat, kappa_hat = p_germline.em_algo(algo=algo, delta_logll=delta)
     logging.info("Finished EM-algorithm!")
     logging.info("Estimating MLE VAF ...")
     ci_mle_p = p_germline.est_vaf_CI()
