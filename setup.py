@@ -1,13 +1,28 @@
 """Setup module for building pGermlinePoly utilities."""
 
+import sys
 
-from distutils.core import Extension
-
+import numpy as np
 from Cython.Build import cythonize
-from Cython.Compiler import Options
-from setuptools import setup
+from setuptools import setup, Extension
 
-extensions = [Extension("poly_utils", ["pGermlinePoly/poly_utils.pyx"])]
+if sys.platform == "darwin":
+    omp_prefix = "/opt/homebrew/opt/libomp"
+    extra_compile_args = ["-Xpreprocessor", "-fopenmp", f"-I{omp_prefix}/include"]
+    extra_link_args = [f"-L{omp_prefix}/lib", "-lomp"]
+else:
+    extra_compile_args = ["-fopenmp"]
+    extra_link_args = ["-fopenmp"]
+
+extensions = [
+    Extension(
+        "poly_utils",
+        ["pGermlinePoly/poly_utils.pyx"],
+        include_dirs=[np.get_include()],
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+    )
+]
 
 setup_args = dict(
     ext_modules=cythonize(

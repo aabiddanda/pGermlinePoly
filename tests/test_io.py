@@ -1,17 +1,13 @@
-import numpy as np
 import pytest
-import yaml
 from cyvcf2 import VCF
 
 from pGermlinePoly.io import (
     check_annotations,
     check_samples,
-    create_anno,
-    create_clonal_pl_matrix,
-    create_germline_anno_gl,
-    create_read_matrix,
-    invert_pl,
     validate_config,
+    create_germline_anno,
+    create_anno,
+    create_read_matrix,
 )
 
 # -------- 1. Testing Configs --------- #
@@ -21,6 +17,17 @@ age: 50
 sex: M
 germline:
   - JH214UJbulk
+clones:
+  - JH214UJG11
+  - JH214UJG2
+annotations:
+  - MLEAF
+"""
+
+no_germline_config = """
+ind: JH214UJ
+age: 50
+sex: M
 clones:
   - JH214UJG11
   - JH214UJG2
@@ -89,32 +96,14 @@ annotations:
 """
 
 
-@pytest.mark.parametrize(
-    "test_pl", [np.array([3, 0, 20]), np.array([0, 20, 40]), np.array([0, 0, 0])]
-)
-def test_invert_pl(test_pl):
-    """Testing the inverted PL functionality."""
-    norm_pl = invert_pl(test_pl)
-    assert np.exp(norm_pl).sum() == 1.0
-
-
-@pytest.mark.parametrize("test_pl", [np.array([-1, 0, 0]), np.array([-1, -2, -4])])
-def test_invert_pl_bad(test_pl):
-    """Testing the inverted PL functionality."""
-    with pytest.raises(AssertionError):
-        invert_pl(test_pl)
-
-
 def test_valid_config_strings(tmp_path):
     """Testing valid configurations."""
     d = tmp_path / "valid"
     d.mkdir()
-    p1 = d / "hello.yaml"
-    p1.write_text(good_config)
-    validate_config(p1)
-    p2 = d / "hello2.yaml"
-    p2.write_text(no_anno_config)
-    validate_config(p2)
+    for c_str in [good_config, no_germline_config, no_anno_config]:
+        p1 = d / "hello.yaml"
+        p1.write_text(c_str)
+        validate_config(p1)
 
 
 def test_bad_config_strings(tmp_path):
@@ -239,7 +228,7 @@ def test_validate_vcf(tmp_path):
     check_annotations(cur_vcf, annotations=annotations)
 
 
-def test_annotation_extraction(tmp_path):
+def test_read_matrix(tmp_path):
     """Run through a full validation of the VCF protocol."""
     d = tmp_path / "real_vcf_test"
     d.mkdir()
@@ -249,28 +238,11 @@ def test_annotation_extraction(tmp_path):
     vcf_fp.write_text(good_vcf_string)
     config = validate_config(config_fp)
     samples = config["clones"]
-    annotations = config["annotations"]
-    clone_vcf = VCF(vcf_fp, samples=samples)
-    X = create_clonal_pl_matrix(clone_vcf)
-    assert X.shape[2] == 3
-    assert X.shape[1] == 2
-
-
-def test_read_extraction(tmp_path):
-    """Run through a full validation of the VCF protocol."""
-    d = tmp_path / "real_vcf_test"
-    d.mkdir()
-    config_fp = d / "config.yaml"
-    config_fp.write_text(good_config_real)
-    vcf_fp = d / "test.vcf"
-    vcf_fp.write_text(good_vcf_string)
-    config = validate_config(config_fp)
-    samples = config["clones"]
-    annotations = config["annotations"]
     clone_vcf = VCF(vcf_fp, samples=samples)
     X = create_read_matrix(clone_vcf)
     assert X.ndim == 3
-    assert X.shape[0] > 0
+    assert X.shape[0] == 1
+    assert X.shape[1] == 2
     assert X.shape[2] == 2
 
 
@@ -284,9 +256,8 @@ def test_create_germline_anno(tmp_path):
     vcf_fp.write_text(good_vcf_string)
     config = validate_config(config_fp)
     samples = config["germline"]
-    annotations = config["annotations"]
     germline_vcf = VCF(vcf_fp, samples=samples)
-    germ_anno = create_germline_anno_gl(germline_vcf)
+    germ_anno = create_germline_anno(germline_vcf)
     assert germ_anno.size > 0
 
 
@@ -303,3 +274,4 @@ def test_create_anno(tmp_path):
     annotations = config["annotations"]
     germline_vcf = VCF(vcf_fp, samples=samples)
     anno = create_anno(germline_vcf, annotations=annotations)
+    assert anno.ndim == 2

@@ -4,11 +4,13 @@ pGermlinePoly implements an EM-algorithm incoporating site-level annotations .
 
 Modules exported are:
 
+* ClonalSim: class for simulating clonal sequencing datasets.
+* MutectLOD: class for estimating LOD score for somatic variants using the Mutect2 model.
 * ProbGermline: class for estimating the posterior probability of germline polymorphism.
-* ClonalSim: class for simulating clonal sequencing datasets
+* BetaOverdispersion: class for estimating overdispersion indicative of somatic variants using Beta-binomial model.
 """
 
-__version__ = "0.0.1c"
+__version__ = "0.0.3a"
 
 from .io import *  # noqa
-from .pGermlinePoly import ClonalSim, MutectLOD, ProbGermline
+from .pGermlinePoly import ClonalSim, MutectLOD, ProbGermline, BetaOverdispersion  # noqa

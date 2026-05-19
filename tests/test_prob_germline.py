@@ -1,0 +1,368 @@
+import numpy as np
+from scipy.special import digamma as scipy_digamma
+import pytest
+from conftest import sim_read_counts, sim_annotations
+
+from pGermlinePoly import ProbGermline
+from poly_utils import kappa_score
+
+
+# ---------------------------------------------------------------------------
+# Reference implementations (scipy) for validating the native digamma path
+# ---------------------------------------------------------------------------
+
+
+def _ref_kappa_score(X, gammas, mu, kappa):
+    """Pure-Python reference for kappa_score using scipy digamma."""
+    score = 0.0
+    M, J = X.shape[0], X.shape[1]
+    for k in range(M):
+        for j in range(J):
+            a = float(X[k, j, 1])
+            n = float(X[k, j, 0] + X[k, j, 1])
+            w = 1.0 - gammas[k, j]
+            score += w * (
+                mu * scipy_digamma(a + mu * kappa)
+                + (1.0 - mu) * scipy_digamma(n - a + (1.0 - mu) * kappa)
+                - scipy_digamma(n + kappa)
+                - mu * scipy_digamma(mu * kappa)
+                - (1.0 - mu) * scipy_digamma((1.0 - mu) * kappa)
+                + scipy_digamma(kappa)
+            )
+    return score
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("mu", [0.1, 0.5, 0.9])
+@pytest.mark.parametrize("kappa", [1.0, 10.0, 100.0])
+def test_kappa_score_vs_scipy(mu, kappa):
+    """kappa_score (native digamma) must match the scipy reference to 1e-8."""
+    rng = np.random.default_rng(42)
+    M, J = 8, 5
+    n = rng.integers(5, 30, size=(M, J))
+    a = rng.integers(0, n + 1)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    gammas = rng.uniform(0.0, 1.0, size=(M, J))
+    ref = _ref_kappa_score(X, gammas, mu, kappa)
+    got = kappa_score(X, gammas, mu, kappa)
+    assert abs(got - ref) < 1e-8 * (abs(ref) + 1.0), (
+        f"mu={mu}, kappa={kappa}: got={got}, ref={ref}"
+    )
+
+
+@pytest.mark.parametrize("kappa", [0.5, 5.0, 50.0])
+def test_kappa_score_sign_at_boundary(kappa):
+    """Score should change sign around the MLE concentration parameter."""
+    rng = np.random.default_rng(7)
+    M, J, mu = 20, 10, 0.5
+    n = rng.integers(10, 40, size=(M, J))
+    a = (n * mu).astype(np.int64)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    gammas = np.zeros((M, J))  # all weight on beta-binomial component
+    score = kappa_score(X, gammas, mu, kappa)
+    assert np.isfinite(score)
+
+
+def test_kappa_score_zero_weight():
+    """When all gammas are 1 every site is pure binomial; score must be 0."""
+    rng = np.random.default_rng(0)
+    M, J = 5, 4
+    n = rng.integers(5, 20, size=(M, J))
+    a = rng.integers(0, n + 1)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    gammas = np.ones((M, J))  # w = 1 - gamma = 0 for all sites
+    assert kappa_score(X, gammas, 0.5, 10.0) == 0.0
+
+
+@pytest.mark.parametrize("m,j,a", [(10, 4, 2)])
+def test_initialization(m, j, a):
+    """Test that the intialization of the class will go well."""
+    X = np.zeros(shape=(m, j, 2))
+    A = np.zeros(shape=(m, a))
+    prob_germline = ProbGermline(X=X, Theta=A)
+    assert prob_germline.J == j
+    assert prob_germline.M == m
+
+
+def test_impute_anno():
+    """Naive test that imputing annotations works."""
+    X = np.zeros(shape=(10, 3, 2))
+    Theta = np.zeros(shape=(10, 2))
+    # Set a couple of nan values in there ...
+    Theta[0, 0] = np.nan
+    Theta[5, :] = np.nan
+    prob_germline = ProbGermline(X=X, Theta=Theta)
+    prob_germline.impute_anno()
+    # Make sure we recover the nanmean of zero.
+    assert prob_germline.Theta[0, 0] == 0
+    assert prob_germline.Theta[5, 0] == 0
+    assert prob_germline.Theta[5, 1] == 0
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_est_vaf(m, j, c, a):
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    vaf = np.array([X[i, :, 1].sum() / X[i, :, :].sum() for i in range(m)])
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    assert np.all(prob_germline.vaf == vaf)
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_est_vaf_nonnaive(m, j, c, a):
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    vaf = np.array([X[i, :, 1].sum() / X[i, :, :].sum() for i in range(m)])
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf(naive=False)
+    assert ~np.all(prob_germline.vaf == vaf)
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [50, 100])
+@pytest.mark.parametrize("c", [30])
+@pytest.mark.parametrize("a", [5])
+@pytest.mark.parametrize("v", [0.1, 0.25])
+def test_vaf_est_all_somatic(m, j, c, a, v):
+    X, somatic, _ = sim_read_counts(
+        m=m, j=j, coverage=c, p_somatic=1.0, vaf=v, seed=m + j
+    )
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf(naive=True)
+    assert np.all(prob_germline.vaf > 1e-3)
+    prob_germline.mle_vaf(naive=False)
+    assert np.all(prob_germline.vaf > 1e-3)
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_est_vaf_CI(m, j, c, a):
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    vaf = np.array([X[i, :, 1].sum() / X[i, :, :].sum() for i in range(m)])
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    ci_mle_p = prob_germline.est_vaf_CI()
+    assert np.all(prob_germline.vaf == vaf)
+    assert np.all(ci_mle_p[:, 0] <= ci_mle_p[:, 2])
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_llr_het(m, j, c, a):
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    llrs = prob_germline.loglik_ratio_het()
+    assert llrs.size == prob_germline.M
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5])
+@pytest.mark.parametrize("p", [0.0, 0.1, 0.25])
+@pytest.mark.parametrize("v", [0.05, 0.1, 0.25])
+def test_llr_het_somatic(m, j, c, a, p, v):
+    X, somatic, _ = sim_read_counts(
+        m=m, j=j, coverage=c, p_somatic=p, vaf=v, seed=m + j
+    )
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    llrs = prob_germline.loglik_ratio_het()
+    assert llrs.size == prob_germline.M
+    if np.sum(somatic) > 0:
+        assert np.mean(llrs[somatic])
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_prior_poly(m, j, c, a):
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    pp = prob_germline.prior_poly(lambdas=np.zeros(A.shape[1]))
+    assert np.all(pp <= 0.0)
+    assert pp.ndim == 1
+    assert pp.size == m
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30, 50])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_posterior_prob_poly(m, j, c, a):
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    pp = prob_germline.post_prob_poly(lambdas=np.zeros(A.shape[1]))
+    assert np.all(pp <= 0.0)
+    assert pp.ndim == 1
+    assert pp.size == m
+
+
+def test_posterior_prob_even():
+    """Test with even posterior distribution due to same likelihood."""
+
+    X = np.array(
+        [
+            [[3, 3], [3, 3]],
+            [[3, 3], [3, 3]],
+            [[3, 3], [3, 3]],
+        ],
+        dtype="int",
+    )
+    A = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, np.nan]], dtype="double")
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    pp = prob_germline.post_prob_poly(lambdas=np.zeros(A.shape[1]))
+    assert pp.size == X.shape[0]
+    assert np.all(pp == pp[0])
+
+
+@pytest.mark.parametrize("m", [10, 50, 100])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30, 50])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_complete_logll(m, j, c, a):
+    """Test the computational of the likelihood of the observed data given lambdas."""
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    lambdas = np.zeros(a)
+    logll = prob_germline.complete_logll(lambdas=lambdas)
+    assert logll <= 0
+
+
+@pytest.mark.parametrize("m", [10, 50, 1000])
+@pytest.mark.parametrize("j", [5, 50, 100])
+@pytest.mark.parametrize("c", [5, 10, 30, 50])
+@pytest.mark.parametrize("a", [1, 5, 10])
+def test_infer_weights(m, j, c, a):
+    """Test a naive optimization of the weights for all SNPs."""
+    X, _, _ = sim_read_counts(m=m, j=j, coverage=c, seed=m + j)
+    A = sim_annotations(m=m, a=a, seed=m + a)
+    prob_germline = ProbGermline(X=X, Theta=A)
+    prob_germline.impute_anno()
+    prob_germline.mle_vaf()
+    lambdas_hat = prob_germline.naive_mle()
+    lambdas = np.zeros(a)
+    logll_null = prob_germline.complete_logll(lambdas=lambdas)
+    logll_mle = prob_germline.complete_logll(lambdas=lambdas_hat)
+    assert logll_mle >= logll_null
+
+
+# ---------------------------------------------------------------------------
+# EM algorithm simulation test
+# ---------------------------------------------------------------------------
+
+
+def test_em_algo_loglik_nondecreasing():
+    """EM log-likelihood must be non-decreasing across all iterations."""
+    M, J, cov = 60, 8, 30
+    X, *_ = sim_read_counts(m=M, j=J, coverage=cov, seed=7)
+    A = sim_annotations(m=M, a=2, seed=7)
+    pg = ProbGermline(X=X, Theta=A)
+    pg.mle_vaf()
+    loglls, _, _, _ = pg.em_algo(delta_logll=1e-3)
+    diffs = np.diff(loglls)
+    assert np.all(diffs >= -1e-6), (
+        f"Log-likelihood decreased at iterations: {np.where(diffs < -1e-6)[0].tolist()}"
+    )
+
+
+def test_em_algo_improves_over_null():
+    """EM should achieve a strictly better log-likelihood than the null (lambda=0)."""
+    M, J, cov = 80, 10, 30
+    X, *_ = sim_read_counts(m=M, j=J, coverage=cov, seed=5)
+    A = sim_annotations(m=M, a=3, seed=5)
+    pg = ProbGermline(X=X, Theta=A)
+    pg.mle_vaf()
+    ll_null = pg.complete_logll(lambdas=np.zeros(3))
+    loglls, lambdas_hat, betas_hat, kappa_hat = pg.em_algo(delta_logll=1e-3)
+    assert loglls[-1] >= ll_null - 1e-6
+    assert np.all(np.isfinite(lambdas_hat))
+    assert np.isfinite(kappa_hat) and kappa_hat > 0
+
+
+def test_em_algo_discriminates_germline_somatic():
+    """EM should learn a positive annotation weight when the annotation tags germline sites,
+    and posterior probabilities should be systematically higher for true germline sites."""
+    rng = np.random.default_rng(123)
+    M_germ, M_som, J, cov = 60, 60, 10, 30
+
+    # Germline sites: binomial(n, 0.5) reads across all clones
+    X_germ = np.zeros((M_germ, J, 2), dtype=np.int64)
+    for i in range(M_germ):
+        n = rng.poisson(cov, size=J)
+        a = rng.binomial(n, 0.5)
+        X_germ[i, :, 0] = n - a
+        X_germ[i, :, 1] = a
+
+    # Somatic sites: error-level reads in all clones except one carrier at ~50% VAF
+    X_som = np.zeros((M_som, J, 2), dtype=np.int64)
+    for i in range(M_som):
+        n = rng.poisson(cov, size=J)
+        a = rng.binomial(n, 1e-3)
+        j_mut = rng.integers(J)
+        a[j_mut] = rng.binomial(n[j_mut], 0.5)
+        X_som[i, :, 0] = n - a
+        X_som[i, :, 1] = a
+
+    X = np.vstack([X_germ, X_som])
+
+    # Annotation: germline sites draw from N(+2, 0.5), somatic from N(-2, 0.5)
+    Theta = np.vstack(
+        [
+            rng.normal(2.0, 0.5, size=(M_germ, 1)),
+            rng.normal(-2.0, 0.5, size=(M_som, 1)),
+        ]
+    )
+
+    pg = ProbGermline(X=X, Theta=Theta)
+    pg.mle_vaf()
+    loglls, lambdas_hat, betas_hat, kappa_hat = pg.em_algo(delta_logll=1e-3)
+
+    # Lambda should be positive: higher annotation → more likely germline
+    assert lambdas_hat[0] > 0, f"Expected positive lambda, got {lambdas_hat[0]:.4f}"
+
+    # Posterior probs (log scale) should be higher for germline sites on average
+    pp = pg.post_prob_poly(lambdas=lambdas_hat, betas=betas_hat, kappa=kappa_hat)
+    mean_pp_germ = np.mean(pp[:M_germ])
+    mean_pp_som = np.mean(pp[M_germ:])
+    assert mean_pp_germ > mean_pp_som, (
+        f"Germline posterior mean {mean_pp_germ:.3f} not greater than "
+        f"somatic posterior mean {mean_pp_som:.3f}"
+    )

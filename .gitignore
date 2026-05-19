@@ -8,6 +8,7 @@ nohup.out
 *.tbi
 *.vcf.gz
 *.yaml
+*.claude/
 build/
 *.coverage*
 .hypothesis/
@@ -15,3 +16,15 @@ htmlcov/
 docs/_static/
 docs/_templates/
 docs/_build/
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.pdf
+*.bbl
+*.blg
+*.dvi
+*.xdv
+pytest-coverage.txt
+pytest.xml
