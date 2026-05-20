@@ -23,8 +23,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install package and test dependencies
-        run: uv pip install --system ".[tests]"
+        run: uv pip install ".[tests]"
 
       - name: Test with pytest
-        run: |
-          pytest -n 4 --verbose
+        run: uv run pytest -n 4 --verbose
