@@ -3,6 +3,7 @@ import pytest
 from cyvcf2 import VCF
 
 from pGermlinePoly import ClonalSim
+from poly_utils import geno_loglik, geno_loglik_2d
 
 
 @pytest.mark.parametrize("seqlen,n", [(0.0, 0), (1e6, 0), (1e6, -0.5), (-100, 3)])
@@ -110,3 +111,101 @@ def test_vcf_output_full_sim(tmp_path):
     assert reread_vcf.contains("AD")
     assert reread_vcf.contains("PL")
     assert len(reread_vcf.samples) == 5 + 1
+
+
+# ---------------------------------------------------------------------------
+# geno_loglik_2d numerical equivalence
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("M,J", [(1, 1), (10, 5), (100, 20)])
+def test_geno_loglik_2d_matches_scalar(M, J):
+    """geno_loglik_2d must agree with calling geno_loglik per (i, j).
+
+    geno_loglik accumulates in float32 (its internal ``eps``/``gl`` are
+    C floats), while geno_loglik_2d uses float64 throughout.  Results
+    therefore differ by at most a fraction of a Phred unit; we allow 0.01
+    Phred absolute tolerance, which is irrelevant in practice since PL
+    values are rounded to integers before VCF output.
+    """
+    rng = np.random.default_rng(0)
+    tot = rng.integers(1, 30, size=(M, J)).astype(np.int64)
+    alt = rng.integers(0, tot + 1, size=(M, J)).astype(np.int64)
+    alt = np.minimum(alt, tot)
+
+    expected = np.empty((M, J, 3))
+    for i in range(M):
+        for j in range(J):
+            expected[i, j, :] = geno_loglik(int(alt[i, j]), int(tot[i, j]))
+
+    got = np.empty((M, J, 3))
+    geno_loglik_2d(alt, tot, got)
+
+    np.testing.assert_allclose(got, expected, atol=0.01)
+
+
+def test_geno_loglik_2d_zero_coverage():
+    """Sites with zero coverage should produce all-zero PL vectors."""
+    alt = np.zeros((5, 3), dtype=np.int64)
+    tot = np.zeros((5, 3), dtype=np.int64)
+    out = np.empty((5, 3, 3))
+    geno_loglik_2d(alt, tot, out)
+    assert np.all(out == 0.0)
+
+
+def test_geno_loglik_2d_1d_reshape_matches_scalar():
+    """The reshape(-1,1) + squeeze idiom used at 1-D call sites is equivalent."""
+    rng = np.random.default_rng(1)
+    M = 50
+    tot_1d = rng.integers(1, 40, size=M).astype(np.int64)
+    alt_1d = rng.integers(0, tot_1d + 1, size=M).astype(np.int64)
+    alt_1d = np.minimum(alt_1d, tot_1d)
+
+    # Assign immediately into a pre-allocated array to avoid geno_loglik's
+    # stack-backed memoryview being invalidated between list elements.
+    expected = np.empty((M, 3))
+    for i, (a, t) in enumerate(zip(alt_1d, tot_1d)):
+        expected[i, :] = geno_loglik(int(a), int(t))
+
+    out3d = np.empty((M, 1, 3))
+    geno_loglik_2d(alt_1d.reshape(-1, 1), tot_1d.reshape(-1, 1), out3d)
+    got = out3d[:, 0, :]
+
+    np.testing.assert_allclose(got, expected, atol=0.01)
+
+
+# ---------------------------------------------------------------------------
+# create_read_matrix correctness
+# ---------------------------------------------------------------------------
+
+def test_create_read_matrix_shape_and_values():
+    """create_read_matrix must return (M_som + M_germ, J, 2) with ref+alt = tot."""
+    sim = ClonalSim(seq_len=1e6, n_clones=5)
+    sim.simulate_germline(seed=7)
+    sim.simulate_clone_genealogy(seed=7)
+    sim.sim_somatic_mutations(mut_rate=1e-6, seed=7)
+    sim.simulate_clonal_germline_muts(seed=7)
+
+    X = sim.create_read_matrix()
+
+    expected_M = sim.n_somatic_mut + sim.n_germline_poly
+    assert X.shape == (expected_M, sim.J, 2)
+
+    # ref + alt must equal total reads for every (site, clone)
+    somatic_tot = sim.somatic_tot_reads  # (n_somatic_mut, J)
+    germline_tot = sim.germline_clone_tot_reads  # (n_germline_poly, J)
+    expected_tot = np.vstack([somatic_tot, germline_tot])
+    np.testing.assert_array_equal(X[:, :, 0] + X[:, :, 1], expected_tot)
+
+
+def test_create_read_matrix_alt_values():
+    """Alt-read slice of create_read_matrix must equal the stored alt arrays."""
+    sim = ClonalSim(seq_len=1e6, n_clones=4)
+    sim.simulate_germline(seed=99)
+    sim.simulate_clone_genealogy(seed=99)
+    sim.sim_somatic_mutations(mut_rate=1e-6, seed=99)
+    sim.simulate_clonal_germline_muts(seed=99)
+
+    X = sim.create_read_matrix()
+
+    expected_alt = np.vstack([sim.somatic_alt_reads, sim.germline_clone_alt_reads])
+    np.testing.assert_array_equal(X[:, :, 1], expected_alt)

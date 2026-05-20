@@ -480,6 +480,55 @@ cpdef double[:] geno_loglik(int alt_reads, int tot_reads, double q=30.0):
     return norm_gl
 
 
+cpdef void geno_loglik_2d(
+    long[:, :] alt_reads,
+    long[:, :] tot_reads,
+    double[:, :, :] out,
+    double q=30.0,
+):
+    """Fill *out* with Phred-scaled PLs for a 2-D array of (alt, tot) pairs.
+
+    Equivalent to calling ``geno_loglik(alt_reads[i,j], tot_reads[i,j], q)``
+    for each (i, j) and storing the result in ``out[i, j, :]``. Precomputes
+    per-base log probabilities once and loops in C over the (M, J) grid.
+
+    Parameters
+    ----------
+    alt_reads : long[:, :]
+        Alt-read counts, shape (M, J).
+    tot_reads : long[:, :]
+        Total read counts, shape (M, J).
+    out : double[:, :, :]
+        Pre-allocated output buffer, shape (M, J, 3). Modified in place.
+    q : double, optional
+        Phred-scaled read quality. Default 30.
+    """
+    cdef int M = alt_reads.shape[0]
+    cdef int J = alt_reads.shape[1]
+    cdef int i, j
+    cdef double eps, lp_err, lp_het, lp_ref, gl00, gl01, gl11, gl_min
+    eps = 10.0 ** (-q / 10.0)
+    lp_err = log(eps / 3.0)
+    lp_het = log(0.5 * (1.0 - eps) + eps / 6.0)
+    lp_ref = log(1.0 - eps)
+    for i in range(M):
+        for j in range(J):
+            gl00 = alt_reads[i, j] * lp_err + (tot_reads[i, j] - alt_reads[i, j]) * lp_ref
+            gl01 = 2.0 * tot_reads[i, j] * lp_het
+            gl11 = alt_reads[i, j] * lp_ref + (tot_reads[i, j] - alt_reads[i, j]) * lp_err
+            out[i, j, 0] = -10.0 * log10(exp(gl00))
+            out[i, j, 1] = -10.0 * log10(exp(gl01))
+            out[i, j, 2] = -10.0 * log10(exp(gl11))
+            gl_min = out[i, j, 0]
+            if out[i, j, 1] < gl_min:
+                gl_min = out[i, j, 1]
+            if out[i, j, 2] < gl_min:
+                gl_min = out[i, j, 2]
+            out[i, j, 0] -= gl_min
+            out[i, j, 1] -= gl_min
+            out[i, j, 2] -= gl_min
+
+
 # ---------------------------------------------------------------------------
 # Beta-Binomial error model primitives
 # ---------------------------------------------------------------------------
