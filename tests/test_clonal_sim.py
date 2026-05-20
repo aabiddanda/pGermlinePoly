@@ -68,6 +68,27 @@ def test_full_germline_somatic_sim(seqlen, n):
     assert np.any(clone_sim.germline_clone_pl != 0)
 
 
+@pytest.fixture
+def sim():
+    return ClonalSim(seq_len=1e6, n_clones=2)
+
+
+def test_create_gt_string_nan_pl(sim):
+    """NaN PL (e.g. from exp underflow in phred_rescale) must not crash and should yield equal PLs."""
+    nan_pl = np.array([np.nan, np.nan, np.nan])
+    gt_str, *_ = sim.create_gt_string(alt_reads=0, tot_reads=0, pl=nan_pl)
+    pl_field = gt_str.split(":")[4]
+    assert all(v == "0" for v in pl_field.split(","))
+
+
+def test_create_gt_string_inf_pl(sim):
+    """Inf PL values (exp underflow path) must also yield equal PLs."""
+    inf_pl = np.array([np.inf, np.inf, np.inf])
+    gt_str, *_ = sim.create_gt_string(alt_reads=0, tot_reads=0, pl=inf_pl)
+    pl_field = gt_str.split(":")[4]
+    assert all(v == "0" for v in pl_field.split(","))
+
+
 def test_vcf_output_full_sim(tmp_path):
     """Test that the VCF output makes sense."""
     clone_sim = ClonalSim(seq_len=1e6, n_clones=5)

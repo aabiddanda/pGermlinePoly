@@ -1230,6 +1230,8 @@ class ClonalSim:
         if tot_reads < 2:
             gt_str = "./."
             an = 0
+        if not np.all(np.isfinite(pl)):
+            pl = np.zeros(pl.size)
         ad_str = f"{tot_reads - alt_reads},{alt_reads}"
         dp_str = f"{tot_reads}"
         pl_str = ",".join([str(int(p)) for p in pl])
