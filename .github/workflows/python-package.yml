@@ -20,10 +20,10 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Set up Python
-        run: uv python install
+        run: uv python install 3.12
 
       - name: Install package and test dependencies
-        run: uv pip install ".[tests]"
+        run: uv pip install --system ".[tests]"
 
       - name: Test with pytest
         run: |
