@@ -8,7 +8,6 @@ import warnings
 from poly_utils import (
     loglik_ratio,
     var_loglik,
-    geno_loglik,
     geno_loglik_2d,
     log_posterior_germline,
     observed_loglik_site,
@@ -908,8 +907,10 @@ class ClonalSim:
         mut_alt_reads = binom.rvs(n=mut_tot_reads, p=0.5)
         mut_pl = np.empty((tot_muts, 3))
         geno_loglik_2d(
-            mut_alt_reads.reshape(-1, 1), mut_tot_reads.reshape(-1, 1),
-            mut_pl[:, np.newaxis, :], q,
+            mut_alt_reads.reshape(-1, 1),
+            mut_tot_reads.reshape(-1, 1),
+            mut_pl[:, np.newaxis, :],
+            q,
         )
         # Set all of the simulation object definitions for germline polymophism ...
         self.n_germline_poly = tot_muts
@@ -1034,7 +1035,9 @@ class ClonalSim:
         # If there are somatic mutations - estimate the pl field & add to the germline sample as ref ...
         if self.n_somatic_mut > 0:
             somatic_mut_pl = np.empty((n_somatic_mut, self.J, 3))
-            geno_loglik_2d(self.somatic_alt_reads, self.somatic_tot_reads, somatic_mut_pl, q)
+            geno_loglik_2d(
+                self.somatic_alt_reads, self.somatic_tot_reads, somatic_mut_pl, q
+            )
             self.somatic_mut_pl = somatic_mut_pl
 
     def simulate_clonal_germline_muts(
@@ -1087,7 +1090,9 @@ class ClonalSim:
         )
         germline_clone_tot_reads[germline_clone_tot_reads <= 0] = 0
         germline_clone_alt_reads = binom.rvs(n=germline_clone_tot_reads, p=0.5)
-        geno_loglik_2d(germline_clone_alt_reads, germline_clone_tot_reads, germline_clone_pl, q)
+        geno_loglik_2d(
+            germline_clone_alt_reads, germline_clone_tot_reads, germline_clone_pl, q
+        )
         # Store the clonal genotypes below ...
         self.germline_clone_tot_reads = germline_clone_tot_reads
         self.germline_clone_alt_reads = germline_clone_alt_reads
@@ -1132,8 +1137,10 @@ class ClonalSim:
         somatic_alt_reads = binom.rvs(n=somatic_tot_reads, p=eps).astype(int)
         somatic_pl = np.empty((self.n_somatic_mut, 3))
         geno_loglik_2d(
-            somatic_alt_reads.reshape(-1, 1), somatic_tot_reads.reshape(-1, 1),
-            somatic_pl[:, np.newaxis, :], q,
+            somatic_alt_reads.reshape(-1, 1),
+            somatic_tot_reads.reshape(-1, 1),
+            somatic_pl[:, np.newaxis, :],
+            q,
         )
         self.germline_somatic_tot_reads = somatic_tot_reads
         self.germline_somatic_alt_reads = somatic_alt_reads

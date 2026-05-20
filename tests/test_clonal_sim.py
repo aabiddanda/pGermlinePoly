@@ -117,6 +117,7 @@ def test_vcf_output_full_sim(tmp_path):
 # geno_loglik_2d numerical equivalence
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("M,J", [(1, 1), (10, 5), (100, 20)])
 def test_geno_loglik_2d_matches_scalar(M, J):
     """geno_loglik_2d must agree with calling geno_loglik per (i, j).
@@ -176,6 +177,7 @@ def test_geno_loglik_2d_1d_reshape_matches_scalar():
 # ---------------------------------------------------------------------------
 # create_read_matrix correctness
 # ---------------------------------------------------------------------------
+
 
 def test_create_read_matrix_shape_and_values():
     """create_read_matrix must return (M_som + M_germ, J, 2) with ref+alt = tot."""
