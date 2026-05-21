@@ -89,6 +89,13 @@ logging.basicConfig(
     help="EM convergence threshold (absolute change in log-likelihood).",
 )
 @click.option(
+    "--max-iter",
+    required=False,
+    default=50,
+    type=int,
+    help="Maximum number of EM iterations before stopping regardless of convergence.",
+)
+@click.option(
     "--em",
     required=False,
     default=False,
@@ -136,6 +143,7 @@ def main(
     algo,
     eps,
     delta,
+    max_iter,
     em,
     lrt,
     mutect2,
@@ -199,7 +207,7 @@ def main(
         logging.info("Finished VAF estimation from pooled reads!")
         logging.info("Starting EM-algorithm...")
         _, lambdas_hat, betas_hat, kappa_hat = p_germline.em_algo(
-            algo=algo, delta_logll=delta
+            algo=algo, delta_logll=delta, max_iter=max_iter
         )
         logging.info("Finished EM-algorithm!")
         logging.info("Estimating MLE VAF ...")

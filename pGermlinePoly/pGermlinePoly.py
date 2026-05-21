@@ -545,6 +545,7 @@ class ProbGermline:
         kappa=None,
         algo="L-BFGS-B",
         delta_logll=1e-4,
+        max_iter=50,
         **kwargs,
     ):
         """Run the EM algorithm to jointly estimate (lambda, beta, kappa).
@@ -568,6 +569,9 @@ class ProbGermline:
         delta_logll : float, optional
             Convergence threshold on the absolute change in observed
             log-likelihood between successive EM iterations. Default is 1e-4.
+        max_iter : int, optional
+            Maximum number of EM iterations before stopping regardless of
+            convergence. Default is 50.
         **kwargs
             Currently unused; accepted for forward compatibility.
 
@@ -598,6 +602,12 @@ class ProbGermline:
         logger.info("EM iter %d  loglik=%.6f", iteration, loglls[-1])
 
         while cur_delta >= delta_logll:
+            if iteration >= max_iter:
+                warnings.warn(
+                    f"EM did not converge within {max_iter} iterations "
+                    f"(delta={cur_delta:.2e}). Returning current estimates."
+                )
+                break
             iteration += 1
 
             # E-step
@@ -612,8 +622,22 @@ class ProbGermline:
             kappa = self._m_step_kappa(gammas)
 
             new_ll = self.complete_logll(lambdas=lambdas, betas=betas, kappa=kappa)
-            if new_ll < loglls[-1] - 1e-8:
-                warnings.warn("Observed log-likelihood decreased in EM iteration.")
+            prev_ll = loglls[-1]
+            if new_ll < prev_ll - 1e-8:
+                warnings.warn(
+                    f"EM iter {iteration}: log-likelihood decreased by "
+                    f"{prev_ll - new_ll:.4e} — possible numerical instability."
+                )
+            elif (
+                new_ll > prev_ll + 1e-8
+                and len(loglls) >= 2
+                and loglls[-2] > prev_ll + 1e-8
+            ):
+                # Increased after a prior decrease: sign reversal indicates oscillation
+                warnings.warn(
+                    f"EM iter {iteration}: log-likelihood increased after a previous "
+                    f"decrease — oscillation detected."
+                )
             loglls.append(new_ll)
             cur_delta = abs(loglls[-1] - loglls[-2])
             logger.info(
@@ -624,12 +648,13 @@ class ProbGermline:
                 kappa,
             )
 
-        logger.info(
-            "EM converged in %d iterations  loglik=%.6f  kappa=%.4f",
-            iteration,
-            loglls[-1],
-            kappa,
-        )
+        if iteration < max_iter:
+            logger.info(
+                "EM converged in %d iterations  loglik=%.6f  kappa=%.4f",
+                iteration,
+                loglls[-1],
+                kappa,
+            )
         self.kappa = kappa
         return np.array(loglls), lambdas, betas, kappa
 
