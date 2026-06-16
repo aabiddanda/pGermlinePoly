@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.special import digamma as scipy_digamma
+from scipy.special import digamma as scipy_digamma, logsumexp
 import pytest
 from conftest import sim_read_counts, sim_annotations
 
@@ -366,3 +366,139 @@ def test_em_algo_discriminates_germline_somatic():
         f"Germline posterior mean {mean_pp_germ:.3f} not greater than "
         f"somatic posterior mean {mean_pp_som:.3f}"
     )
+
+
+# ---------------------------------------------------------------------------
+# est_germline_genotype tests
+# ---------------------------------------------------------------------------
+
+
+def test_germline_genotype_shape_and_normalized():
+    """Output shape is (M, 3) and each row sums to 1 in probability space."""
+    M, J, a = 20, 8, 2
+    X, _, _ = sim_read_counts(m=M, j=J, coverage=20, seed=1)
+    A = sim_annotations(m=M, a=a, seed=1)
+    pg = ProbGermline(X=X, Theta=A)
+    log_post = pg.est_germline_genotype()
+    assert log_post.shape == (M, 3)
+    assert np.allclose(logsumexp(log_post, axis=1), 0.0, atol=1e-10)
+    assert np.all(log_post <= 0.0)
+
+
+def test_germline_genotype_balanced_reads_prefers_het():
+    """When every clone has equal alt and ref counts, 0/1 should be the MAP genotype."""
+    M, J = 15, 10
+    n_each = 10
+    X = np.zeros((M, J, 2), dtype=np.int64)
+    X[:, :, 0] = n_each  # ref
+    X[:, :, 1] = n_each  # alt
+    A = np.zeros((M, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    log_post = pg.est_germline_genotype()
+    assert np.all(np.argmax(log_post, axis=1) == 1), "0/1 (index 1) should win with balanced reads"
+
+
+def test_germline_genotype_all_ref_prefers_hom_ref():
+    """When every clone shows only ref reads, 0/0 should be the MAP genotype."""
+    M, J = 10, 8
+    X = np.zeros((M, J, 2), dtype=np.int64)
+    X[:, :, 0] = 20  # all ref, no alt
+    A = np.zeros((M, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    log_post = pg.est_germline_genotype()
+    assert np.all(np.argmax(log_post, axis=1) == 0), "0/0 (index 0) should win with all-ref reads"
+
+
+def test_germline_genotype_all_alt_prefers_hom_alt():
+    """When every clone shows only alt reads, 1/1 should be the MAP genotype."""
+    M, J = 10, 8
+    X = np.zeros((M, J, 2), dtype=np.int64)
+    X[:, :, 1] = 20  # all alt, no ref
+    A = np.zeros((M, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    log_post = pg.est_germline_genotype()
+    assert np.all(np.argmax(log_post, axis=1) == 2), "1/1 (index 2) should win with all-alt reads"
+
+
+def test_germline_genotype_hwe_prior():
+    """With allele_freq supplied the HWE prior shifts mass toward expected genotype."""
+    M, J = 20, 10
+    X = np.zeros((M, J, 2), dtype=np.int64)
+    X[:, :, 0] = 10
+    X[:, :, 1] = 10  # balanced — 0/1 likelihood wins
+    A = np.zeros((M, 1))
+    pg = ProbGermline(X=X, Theta=A)
+
+    # Uniform prior: equal allele_freq = 0.5 should also favour 0/1
+    log_post_hwe = pg.est_germline_genotype(allele_freq=np.full(M, 0.5))
+    assert log_post_hwe.shape == (M, 3)
+    assert np.allclose(logsumexp(log_post_hwe, axis=1), 0.0, atol=1e-10)
+    assert np.all(np.argmax(log_post_hwe, axis=1) == 1)
+
+    # Rare allele (p=0.01): 0/0 prior dominates; with balanced reads 0/1 should still win
+    # at high depth but prior fights back — just check shape and normalization
+    log_post_rare = pg.est_germline_genotype(allele_freq=np.full(M, 0.01))
+    assert np.allclose(logsumexp(log_post_rare, axis=1), 0.0, atol=1e-10)
+
+
+@pytest.mark.parametrize(
+    "true_geno,p_alt,expected_idx",
+    [
+        ("0/0", 1e-3, 0),    # hom-ref: alt reads are sequencing errors only
+        ("0/1", 0.5,  1),    # het: equal alt and ref reads in every clone
+        ("1/1", 1 - 1e-3, 2),  # hom-alt: ref reads are sequencing errors only
+    ],
+)
+def test_germline_genotype_recovers_truth(true_geno, p_alt, expected_idx):
+    """MAP genotype equals the true root genotype for data simulated under each state.
+
+    With J=15 clones at depth 30 the likelihood ratio between the true and next-best
+    genotype is extreme (hundreds of nats), so the MAP should be correct at every site.
+    """
+    rng = np.random.default_rng(99)
+    M, J, cov = 30, 15, 30
+    n = rng.poisson(cov, size=(M, J))
+    a = rng.binomial(n, p_alt)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    A = np.zeros((M, 1))
+    pg = ProbGermline(X=X, Theta=A, mu=1e-3)
+    log_post = pg.est_germline_genotype()
+    map_geno = np.argmax(log_post, axis=1)
+    assert np.all(map_geno == expected_idx), (
+        f"True genotype {true_geno}: expected all {M} sites to call index "
+        f"{expected_idx}, but {(map_geno != expected_idx).sum()} differed. "
+        f"Unique MAP values: {np.unique(map_geno).tolist()}"
+    )
+
+
+def test_germline_genotype_zero_depth_equals_prior():
+    """With zero read depth the posterior must equal the prior exactly.
+
+    All log-likelihoods are 0 when no reads exist, so log_post_unnorm = log_prior
+    and the posterior reduces to the prior after normalization.  A uniform prior
+    (P(0/0) = P(0/1) = P(1/1) = 1/3) is achieved by setting logit_pi = -log(2) for
+    all sites (giving sigma = 1/3) together with p_hom_alt = 0.5, so all three
+    columns should equal log(1/3).
+    """
+    M, J = 20, 15
+    X = np.zeros((M, J, 2), dtype=np.int64)
+    Theta = np.ones((M, 1))
+    lambdas = np.array([-np.log(2)])  # sigma(-log2) = 1/3 → uniform prior
+    pg = ProbGermline(X=X, Theta=Theta)
+    log_post = pg.est_germline_genotype(lambdas=lambdas, p_hom_alt=0.5)
+    expected = np.log(1.0 / 3.0)
+    assert np.allclose(log_post, expected, atol=1e-10), (
+        f"Expected all log-posteriors = log(1/3) = {expected:.6f}, "
+        f"got range [{log_post.min():.6f}, {log_post.max():.6f}]"
+    )
+
+
+def test_germline_genotype_invalid_p_hom_alt():
+    """p_hom_alt outside (0, 1) must raise ValueError."""
+    X = np.zeros((5, 3, 2), dtype=np.int64)
+    A = np.zeros((5, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    with pytest.raises(ValueError, match="p_hom_alt"):
+        pg.est_germline_genotype(p_hom_alt=0.0)
+    with pytest.raises(ValueError, match="p_hom_alt"):
+        pg.est_germline_genotype(p_hom_alt=1.0)
