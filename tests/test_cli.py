@@ -111,6 +111,7 @@ def test_cli_em_default(sim_vcf_paths, tmp_path):
     assert "lrtGermlinePoly" not in content
     assert "lodMutect" not in content
     assert "rhobeta" not in content
+    assert "ppGermlineGeno" not in content
 
 
 def test_cli_with_germline_vcf(sim_vcf_paths, tmp_path):
@@ -199,7 +200,7 @@ def test_cli_betabinomial_flag(sim_vcf_paths, tmp_path):
 
 
 def test_cli_all_optional_flags(sim_vcf_paths, tmp_path):
-    """All three optional annotation flags coexist without interference."""
+    """All optional annotation flags coexist without interference."""
     out_fp = tmp_path / "out.vcf"
     result = _run(
         [
@@ -210,13 +211,14 @@ def test_cli_all_optional_flags(sim_vcf_paths, tmp_path):
             "--lrt",
             "--mutect2",
             "--betabinomial",
+            "--geno",
             "-o",
             out_fp,
         ]
     )
     assert result.exit_code == 0, result.output
     content = out_fp.read_text()
-    for field in ("lrtGermlinePoly", "lodMutect", "rhobeta"):
+    for field in ("lrtGermlinePoly", "lodMutect", "rhobeta", "ppGermlineGeno"):
         assert field in content, f"Expected INFO field '{field}' missing from output"
 
 
@@ -475,6 +477,85 @@ def test_cli_all_records_have_pp(sim_vcf_paths, tmp_path):
         pp = v.INFO.get("ppGermlinePoly")
         assert pp is not None, f"Record at {v.POS} missing ppGermlinePoly"
         assert not math.isnan(float(pp)), f"ppGermlinePoly is NaN at position {v.POS}"
+
+
+def test_cli_geno_flag_without_em(sim_vcf_paths, tmp_path, caplog):
+    """--geno without --em exits cleanly, emits a flat-prior warning, and writes ppGermlineGeno."""
+    import logging
+
+    out_fp = tmp_path / "out.vcf"
+    with caplog.at_level(logging.WARNING):
+        result = _run(
+            [
+                "--vcf",
+                sim_vcf_paths.vcf_fp,
+                "--config",
+                sim_vcf_paths.cfg_fp,
+                "--geno",
+                "-o",
+                out_fp,
+            ]
+        )
+    assert result.exit_code == 0, result.output
+    assert "ppGermlineGeno" in out_fp.read_text()
+    assert "flat annotation weights" in caplog.text
+
+
+def test_cli_geno_flag_with_em(sim_vcf_paths, tmp_path, caplog):
+    """--geno combined with --em uses EM weights; both ppGermlinePoly and ppGermlineGeno appear."""
+    import logging
+
+    out_fp = tmp_path / "out.vcf"
+    with caplog.at_level(logging.WARNING):
+        result = _run(
+            [
+                "--vcf",
+                sim_vcf_paths.vcf_fp,
+                "--config",
+                sim_vcf_paths.cfg_fp,
+                "--em",
+                "--geno",
+                "-o",
+                out_fp,
+            ]
+        )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "ppGermlinePoly" in content
+    assert "ppGermlineGeno" in content
+    assert "flat annotation weights" not in caplog.text
+
+
+def test_cli_geno_colon_format(sim_vcf_paths, tmp_path):
+    """ppGermlineGeno INFO value is logP(0/0):logP(0/1):logP(1/1) — three non-positive floats."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf",
+            sim_vcf_paths.vcf_fp,
+            "--config",
+            sim_vcf_paths.cfg_fp,
+            "--geno",
+            "-o",
+            out_fp,
+        ]
+    )
+    assert result.exit_code == 0
+    data_lines = [
+        line for line in out_fp.read_text().splitlines() if not line.startswith("#")
+    ]
+    assert len(data_lines) > 0
+    geno_re = re.compile(r"ppGermlineGeno=([^;\s]+)")
+    for line in data_lines:
+        m = geno_re.search(line)
+        assert m is not None, f"ppGermlineGeno missing from record: {line[:80]}"
+        parts = m.group(1).split(":")
+        assert len(parts) == 3, (
+            f"ppGermlineGeno does not have 3 colon-separated parts: {m.group(1)}"
+        )
+        for p in parts:
+            val = float(p)
+            assert val <= 0.0, f"Log posterior must be <= 0, got {val} in {m.group(1)}"
 
 
 def test_cli_mlevaf_colon_format(sim_vcf_paths, tmp_path):

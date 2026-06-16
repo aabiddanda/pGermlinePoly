@@ -32,6 +32,7 @@ Homepage = "https://github.com/aabiddanda/pGermlinePoly"
 
 [project.optional-dependencies]
 tests = [ "pytest", "pytest-cov", "hypothesis", "pytest-xdist"]
+docs = ["sphinx", "furo", "numpydoc", "sphinx-autodoc-typehints"]
 
 [project.scripts]
 pGermlinePoly = "pGermlinePoly.cli:main"

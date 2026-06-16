@@ -128,6 +128,19 @@ logging.basicConfig(
     help="Implement the Beta-Binomial overdispersion method from Spencer-Chapman et al.",
 )
 @click.option(
+    "--geno",
+    required=False,
+    default=False,
+    is_flag=True,
+    type=bool,
+    help=(
+        "Compute per-site log-posterior probabilities over germline genotypes "
+        "{0/0, 0/1, 1/1} at the clonal phylogeny root. Uses annotation weights "
+        "estimated by --em when available; otherwise applies flat (zero) weights "
+        "and issues a warning."
+    ),
+)
+@click.option(
     "--out",
     "-o",
     required=True,
@@ -148,6 +161,7 @@ def main(
     lrt,
     mutect2,
     betabinomial,
+    geno,
     out,
 ):
     """Run the pGermlinePoly inference pipeline on an input VCF.
@@ -158,7 +172,7 @@ def main(
     output VCF with per-site ``ppGermlinePoly`` and ``mleVAF`` INFO fields.
     Optional flags add ``lrtGermlinePoly``, ``lodMutect``, and ``rhobeta``.
     """
-    if not any([em, lrt, mutect2, betabinomial]):
+    if not any([em, lrt, mutect2, betabinomial, geno]):
         raise click.UsageError(
             "At least one of --em, --lrt, --mutect2, or --betabinomial must be specified."
         )
@@ -217,6 +231,20 @@ def main(
         pp_germline_poly = p_germline.post_prob_poly(
             lambdas=lambdas_hat, betas=betas_hat, kappa=kappa_hat
         )
+    if geno:
+        if em:
+            logging.info("Estimating germline genotype posteriors using EM weights...")
+            log_post_geno = p_germline.est_germline_genotype(
+                lambdas=lambdas_hat, betas=betas_hat
+            )
+        else:
+            logging.warning(
+                "--geno was requested without --em; germline genotype posteriors "
+                "will use flat annotation weights (lambdas=0). Run with --em for "
+                "annotation-informed priors."
+            )
+            log_post_geno = p_germline.est_germline_genotype()
+        logging.info("Finished estimating germline genotype posteriors!")
     if lrt:
         logging.info("Estimating the naive likelihood ratio ...")
         loglik_ratio = p_germline.loglik_ratio_het(eps=eps)
@@ -278,6 +306,18 @@ def main(
                 "Description": "Beta-Binomial overdispersion from Spencer-Chapman et al.",
             }
         )
+    if geno:
+        out_vcf.add_info_to_header(
+            {
+                "ID": "ppGermlineGeno",
+                "Number": 1,
+                "Type": "String",
+                "Description": (
+                    "Log posterior probabilities of germline genotypes at the "
+                    "clonal phylogeny root, formatted as logP(0/0):logP(0/1):logP(1/1)."
+                ),
+            }
+        )
     if em:
         if "germline" in config:
             for a, lhat in zip(["germline"] + config["annotations"], lambdas_hat):
@@ -300,6 +340,10 @@ def main(
             v.INFO["lodMutect"] = mutect_lod.lod_germline[i]
         if betabinomial:
             v.INFO["rhobeta"] = rhos[i]
+        if geno:
+            v.INFO["ppGermlineGeno"] = (
+                f"{log_post_geno[i, 0]}:{log_post_geno[i, 1]}:{log_post_geno[i, 2]}"
+            )
         write_vcf.write_record(v)
         i += 1
     write_vcf.close()

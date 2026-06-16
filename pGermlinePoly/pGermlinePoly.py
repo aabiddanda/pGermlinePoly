@@ -250,7 +250,7 @@ class ProbGermline:
         """Compute the log posterior probability of germline heterozygosity for all sites.
 
         Evaluates log P(z_k = het | A_k, R_k) for each of the M sites
-        using the current or supplied model parameters, as in Eq. 9.
+        using the current or supplied model parameters.
 
         Parameters
         ----------
@@ -337,6 +337,112 @@ class ProbGermline:
             ci_mle_p[i, 1] = v
             ci_mle_p[i, 2] = upper_CI
         return ci_mle_p
+
+    def est_germline_genotype(
+        self,
+        lambdas=None,
+        betas=None,
+        allele_freq=None,
+        p_hom_alt=0.5,
+    ):
+        """Compute per-site log-posterior probabilities over germline genotypes {0/0, 0/1, 1/1}.
+
+        Evaluates the joint binomial log-likelihood of clone read counts under
+        each diploid genotype at the phylogenetic root, combined with a genotype
+        prior, and returns the normalized log-posterior.  Because J clones
+        contribute independently, genotype uncertainty decreases quickly with
+        increasing J and per-clone depth — providing far more resolution than a
+        single germline sample.  The 0/1 likelihood is identical to the
+        :func:`~poly_utils.logprob_het` term used in :meth:`post_prob_poly`.
+
+        Parameters
+        ----------
+        lambdas : numpy.ndarray or None, optional
+            Site-level annotation weights, shape (L,).  Only used when
+            ``allele_freq`` is None.  None uses zeros.
+        betas : numpy.ndarray or None, optional
+            Clone-level annotation weights, shape (B,).  Only used when
+            ``allele_freq`` is None.  None uses zeros.
+        allele_freq : numpy.ndarray or None, optional
+            Per-site population allele frequencies, shape (M,), values in
+            [0, 1].  When provided, the genotype prior follows Hardy-Weinberg
+            equilibrium: P(0/0) = (1-p)^2, P(0/1) = 2p(1-p), P(1/1) = p^2.
+            When None, the logistic annotation model supplies P(0/1) =
+            sigma(Theta @ lambdas), and the remaining mass is split between
+            0/0 and 1/1 according to ``p_hom_alt``.
+        p_hom_alt : float, optional
+            Fraction of the non-het prior mass assigned to 1/1 when
+            ``allele_freq`` is None.  Must be strictly between 0 and 1.
+            Default is 0.5 (symmetric split between 0/0 and 1/1).
+
+        Returns
+        -------
+        numpy.ndarray
+            Log-posterior probabilities of shape (M, 3), with columns
+            [log P(0/0|data), log P(0/1|data), log P(1/1|data)], normalized
+            so that logsumexp over columns equals 0 for every site.
+
+        Raises
+        ------
+        ValueError
+            If ``p_hom_alt`` is not strictly between 0 and 1.
+
+        Notes
+        -----
+        The per-clone binomial log-likelihoods for genotype G at site k,
+        summed across J clones (combinatorial coefficient omitted)::
+
+            log P(X_k | G=0/0) = sum_j  a_j log(eps) + r_j log(1 - eps)
+            log P(X_k | G=0/1) = sum_j  n_j log(0.5)
+            log P(X_k | G=1/1) = sum_j  a_j log(1 - eps) + r_j log(eps)
+
+        where eps = ``self.mu``, a_j and r_j are the alt and ref read counts
+        for clone j, and n_j = a_j + r_j.  Clones with zero coverage
+        contribute zero to the sum and therefore carry no information.
+        """
+        if lambdas is None:
+            lambdas = np.zeros(self.L)
+        if betas is None:
+            betas = np.zeros(self.B)
+        if not (0.0 < p_hom_alt < 1.0):
+            raise ValueError(
+                f"p_hom_alt must be strictly between 0 and 1, got {p_hom_alt!r}"
+            )
+
+        eps = self.mu
+        alt = self.X[:, :, 1].astype(np.float64)  # (M, J)
+        ref = self.X[:, :, 0].astype(np.float64)  # (M, J)
+
+        # Per-genotype log-likelihoods summed across clones (binomial kernel, no comb. term)
+        log_lik = np.empty((self.M, 3))
+        log_lik[:, 0] = np.sum(alt * np.log(eps) + ref * np.log(1.0 - eps), axis=1)
+        log_lik[:, 1] = np.sum((alt + ref) * np.log(0.5), axis=1)
+        log_lik[:, 2] = np.sum(alt * np.log(1.0 - eps) + ref * np.log(eps), axis=1)
+
+        # Genotype prior
+        if allele_freq is not None:
+            allele_freq = np.asarray(allele_freq, dtype=np.float64)
+            assert allele_freq.shape == (self.M,)
+            p = np.clip(allele_freq, 1e-10, 1.0 - 1e-10)
+            log_prior = np.column_stack([
+                2.0 * np.log1p(-p),                        # log (1-p)^2
+                np.log(2.0) + np.log(p) + np.log1p(-p),   # log 2p(1-p)
+                2.0 * np.log(p),                           # log p^2
+            ])
+        else:
+            logit_pi = self._compute_logit_pi(lambdas, betas)  # (M,)
+            log_pi_het = -np.log1p(np.exp(-logit_pi))           # log sigma
+            log_pi_not_het = -np.log1p(np.exp(logit_pi))        # log(1 - sigma)
+            log_prior = np.column_stack([
+                log_pi_not_het + np.log(1.0 - p_hom_alt),
+                log_pi_het,
+                log_pi_not_het + np.log(p_hom_alt),
+            ])
+
+        log_post_unnorm = log_prior + log_lik  # (M, 3)
+        log_max = log_post_unnorm.max(axis=1, keepdims=True)
+        log_norm = log_max + np.log(np.exp(log_post_unnorm - log_max).sum(axis=1, keepdims=True))
+        return log_post_unnorm - log_norm
 
     def complete_logll(
         self,
@@ -447,7 +553,7 @@ class ProbGermline:
         """Run the M-step to update annotation weights via weighted logistic regression.
 
         Minimises the negative Q function with respect to (lambda, beta) using
-        ``scipy.optimize.minimize``, as in Eq. 12.
+        ``scipy.optimize.minimize``.
 
         Parameters
         ----------
