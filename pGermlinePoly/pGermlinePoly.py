@@ -250,7 +250,7 @@ class ProbGermline:
         """Compute the log posterior probability of germline heterozygosity for all sites.
 
         Evaluates log P(z_k = het | A_k, R_k) for each of the M sites
-        using the current or supplied model parameters, as in Eq. 9.
+        using the current or supplied model parameters.
 
         Parameters
         ----------
@@ -447,7 +447,7 @@ class ProbGermline:
         """Run the M-step to update annotation weights via weighted logistic regression.
 
         Minimises the negative Q function with respect to (lambda, beta) using
-        ``scipy.optimize.minimize``, as in Eq. 12.
+        ``scipy.optimize.minimize``.
 
         Parameters
         ----------

@@ -1,4 +1,6 @@
 [![CI](https://github.com/aabiddanda/pGermlinePoly/actions/workflows/python-package.yml/badge.svg)](https://github.com/aabiddanda/pGermlinePoly/actions/workflows/python-package.yml)
+[![Coverage](https://codecov.io/gh/aabiddanda/pGermlinePoly/graph/badge.svg)](https://codecov.io/gh/aabiddanda/pGermlinePoly)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://aabiddanda.github.io/pGermlinePoly/)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
