@@ -587,3 +587,77 @@ def test_cli_mlevaf_colon_format(sim_vcf_paths, tmp_path):
         )
         for p in parts:
             assert p, f"Empty mleVAF component in: {m.group(1)}"
+
+
+# ---------------------------------------------------------------------------
+# Missing annotation tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def sim_vcf_missing_anno_paths(tmp_path_factory, sim_vcf_paths):
+    """VCF identical to sim_vcf_paths but with ExternalAF stripped from every other record."""
+    d = tmp_path_factory.mktemp("sim_vcf_missing")
+    vcf_fp = d / "sim_missing_anno.vcf"
+
+    raw = sim_vcf_paths.vcf_fp.read_text().splitlines(keepends=True)
+    out = []
+    data_idx = 0
+    for line in raw:
+        if line.startswith("#"):
+            out.append(line)
+        else:
+            if data_idx % 2 == 1:
+                cols = line.split("\t")
+                info_parts = [p for p in cols[7].split(";") if not p.startswith("ExternalAF=")]
+                cols[7] = ";".join(info_parts) or "."
+                line = "\t".join(cols)
+            out.append(line)
+            data_idx += 1
+    vcf_fp.write_text("".join(out))
+    return types.SimpleNamespace(vcf_fp=vcf_fp, cfg_fp=sim_vcf_paths.cfg_fp)
+
+
+def test_cli_em_missing_annotations(sim_vcf_missing_anno_paths, tmp_path):
+    """--em succeeds and writes ppGermlinePoly when ~half the records lack ExternalAF."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf",
+            sim_vcf_missing_anno_paths.vcf_fp,
+            "--config",
+            sim_vcf_missing_anno_paths.cfg_fp,
+            "--em",
+            "-o",
+            out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "ppGermlinePoly" in content
+    assert "mleVAF" in content
+    assert "##lambda_ExternalAF=" in content
+
+
+def test_cli_all_flags_missing_annotations(sim_vcf_missing_anno_paths, tmp_path):
+    """All analysis flags complete without error when annotation values include NaNs."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf",
+            sim_vcf_missing_anno_paths.vcf_fp,
+            "--config",
+            sim_vcf_missing_anno_paths.cfg_fp,
+            "--em",
+            "--lrt",
+            "--mutect2",
+            "--betabinomial",
+            "--geno",
+            "-o",
+            out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    for field in ("ppGermlinePoly", "lrtGermlinePoly", "lodMutect", "rhobeta", "ppGermlineGeno"):
+        assert field in content, f"Expected INFO field '{field}' missing from output"

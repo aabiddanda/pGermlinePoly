@@ -1,6 +1,8 @@
+import numpy as np
 import pytest
 from cyvcf2 import VCF
 
+from pGermlinePoly import ProbGermline
 from pGermlinePoly.io import (
     check_annotations,
     check_samples,
@@ -275,3 +277,49 @@ def test_create_anno(tmp_path):
     germline_vcf = VCF(vcf_fp, samples=samples)
     anno = create_anno(germline_vcf, annotations=annotations)
     assert anno.ndim == 2
+
+
+# --------- 3. Missing annotation handling ---------- #
+
+# Two-record VCF: first SNP has both MLEAF and MQ; second SNP is missing MLEAF.
+vcf_with_missing_anno = (
+    good_vcf_string.rstrip()
+    + "\nchr21\t5030700\t.\tA\tT\t60.92\tPASS\t"
+    + "AC=1;AF=0.001;AN=354;MQ=55.0;QD=15.0\t"
+    + "GT:AD:DP:GQ:PGT:PID:PL:PS\t"
+    + "0/1:5,5:10:60:.:.:0,60,800:.\t"
+    + "0/0:8,2:10:24:.:.:0,24,300:.\t"
+    + "0/1:6,4:10:50:.:.:0,50,700:.\n"
+)
+
+
+def test_create_anno_missing_field_yields_nan(tmp_path):
+    """create_anno produces NaN (not None) for missing INFO fields, keeping float dtype."""
+    d = tmp_path / "missing_anno"
+    d.mkdir()
+    vcf_fp = d / "test.vcf"
+    vcf_fp.write_text(vcf_with_missing_anno)
+    anno = create_anno(VCF(str(vcf_fp)), annotations=["MLEAF", "MQ"])
+    assert anno.shape == (2, 2)
+    assert np.issubdtype(anno.dtype, np.floating), f"expected float dtype, got {anno.dtype}"
+    assert not np.isnan(anno[0, 0])  # MLEAF present in record 1
+    assert not np.isnan(anno[0, 1])  # MQ present in record 1
+    assert np.isnan(anno[1, 0])      # MLEAF absent in record 2 -> NaN
+    assert not np.isnan(anno[1, 1])  # MQ present in record 2
+
+
+def test_create_anno_missing_imputable(tmp_path):
+    """NaN annotations are imputed correctly by ProbGermline.impute_anno."""
+    d = tmp_path / "missing_anno_pipeline"
+    d.mkdir()
+    vcf_fp = d / "test.vcf"
+    vcf_fp.write_text(vcf_with_missing_anno)
+    anno = create_anno(VCF(str(vcf_fp)), annotations=["MLEAF", "MQ"])
+    M = anno.shape[0]
+    X = np.zeros((M, 2, 2), dtype=int)
+    X[:, :, 0] = 10  # all-ref reads — keeps things simple
+    pg = ProbGermline(X=X, Theta=anno)
+    pg.impute_anno()
+    assert not np.any(np.isnan(pg.Theta)), "all NaNs should be imputed away"
+    expected_mleaf_mean = np.nanmean(anno[:, 0])
+    assert pg.Theta[1, 0] == pytest.approx(expected_mleaf_mean)
