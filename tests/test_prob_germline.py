@@ -395,7 +395,9 @@ def test_germline_genotype_balanced_reads_prefers_het():
     A = np.zeros((M, 1))
     pg = ProbGermline(X=X, Theta=A)
     log_post = pg.est_germline_genotype()
-    assert np.all(np.argmax(log_post, axis=1) == 1), "0/1 (index 1) should win with balanced reads"
+    assert np.all(np.argmax(log_post, axis=1) == 1), (
+        "0/1 (index 1) should win with balanced reads"
+    )
 
 
 def test_germline_genotype_all_ref_prefers_hom_ref():
@@ -406,7 +408,9 @@ def test_germline_genotype_all_ref_prefers_hom_ref():
     A = np.zeros((M, 1))
     pg = ProbGermline(X=X, Theta=A)
     log_post = pg.est_germline_genotype()
-    assert np.all(np.argmax(log_post, axis=1) == 0), "0/0 (index 0) should win with all-ref reads"
+    assert np.all(np.argmax(log_post, axis=1) == 0), (
+        "0/0 (index 0) should win with all-ref reads"
+    )
 
 
 def test_germline_genotype_all_alt_prefers_hom_alt():
@@ -417,7 +421,9 @@ def test_germline_genotype_all_alt_prefers_hom_alt():
     A = np.zeros((M, 1))
     pg = ProbGermline(X=X, Theta=A)
     log_post = pg.est_germline_genotype()
-    assert np.all(np.argmax(log_post, axis=1) == 2), "1/1 (index 2) should win with all-alt reads"
+    assert np.all(np.argmax(log_post, axis=1) == 2), (
+        "1/1 (index 2) should win with all-alt reads"
+    )
 
 
 def test_germline_genotype_hwe_prior():
@@ -444,8 +450,8 @@ def test_germline_genotype_hwe_prior():
 @pytest.mark.parametrize(
     "true_geno,p_alt,expected_idx",
     [
-        ("0/0", 1e-3, 0),    # hom-ref: alt reads are sequencing errors only
-        ("0/1", 0.5,  1),    # het: equal alt and ref reads in every clone
+        ("0/0", 1e-3, 0),  # hom-ref: alt reads are sequencing errors only
+        ("0/1", 0.5, 1),  # het: equal alt and ref reads in every clone
         ("1/1", 1 - 1e-3, 2),  # hom-alt: ref reads are sequencing errors only
     ],
 )

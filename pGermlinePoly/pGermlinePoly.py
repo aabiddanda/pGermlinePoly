@@ -424,24 +424,30 @@ class ProbGermline:
             allele_freq = np.asarray(allele_freq, dtype=np.float64)
             assert allele_freq.shape == (self.M,)
             p = np.clip(allele_freq, 1e-10, 1.0 - 1e-10)
-            log_prior = np.column_stack([
-                2.0 * np.log1p(-p),                        # log (1-p)^2
-                np.log(2.0) + np.log(p) + np.log1p(-p),   # log 2p(1-p)
-                2.0 * np.log(p),                           # log p^2
-            ])
+            log_prior = np.column_stack(
+                [
+                    2.0 * np.log1p(-p),  # log (1-p)^2
+                    np.log(2.0) + np.log(p) + np.log1p(-p),  # log 2p(1-p)
+                    2.0 * np.log(p),  # log p^2
+                ]
+            )
         else:
             logit_pi = self._compute_logit_pi(lambdas, betas)  # (M,)
-            log_pi_het = -np.log1p(np.exp(-logit_pi))           # log sigma
-            log_pi_not_het = -np.log1p(np.exp(logit_pi))        # log(1 - sigma)
-            log_prior = np.column_stack([
-                log_pi_not_het + np.log(1.0 - p_hom_alt),
-                log_pi_het,
-                log_pi_not_het + np.log(p_hom_alt),
-            ])
+            log_pi_het = -np.log1p(np.exp(-logit_pi))  # log sigma
+            log_pi_not_het = -np.log1p(np.exp(logit_pi))  # log(1 - sigma)
+            log_prior = np.column_stack(
+                [
+                    log_pi_not_het + np.log(1.0 - p_hom_alt),
+                    log_pi_het,
+                    log_pi_not_het + np.log(p_hom_alt),
+                ]
+            )
 
         log_post_unnorm = log_prior + log_lik  # (M, 3)
         log_max = log_post_unnorm.max(axis=1, keepdims=True)
-        log_norm = log_max + np.log(np.exp(log_post_unnorm - log_max).sum(axis=1, keepdims=True))
+        log_norm = log_max + np.log(
+            np.exp(log_post_unnorm - log_max).sum(axis=1, keepdims=True)
+        )
         return log_post_unnorm - log_norm
 
     def complete_logll(

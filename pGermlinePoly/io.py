@@ -145,7 +145,7 @@ def create_anno(vcf, annotations=[]):
     total_anno = []
     for v in tqdm(vcf):
         if v.is_snp and (len(v.ALT) == 1):
-            anno = [v.INFO[a] for a in annotations]
+            anno = [v.INFO.get(a) for a in annotations]
         else:
             anno = [np.nan for a in annotations]
         total_anno.append(anno)
