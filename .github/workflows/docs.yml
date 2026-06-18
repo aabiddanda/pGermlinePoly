@@ -26,13 +26,16 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
+      - name: Create virtual environment
+        run: uv venv
+
       - name: Install package and docs dependencies
         run: uv pip install ".[docs]"
 
       - name: Build Sphinx documentation
         run: |
           cd docs
-          make html
+          uv run make html
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3
