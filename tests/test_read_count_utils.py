@@ -20,7 +20,7 @@ class _RC(ReadCountUtils):
     """Thin wrapper that exposes ReadCountUtils through the smallest possible init."""
 
     def __init__(self, X):
-        self.X = self._validate_X(X)
+        self.X = self.validate_X(X)
         self.M, self.J, _ = self.X.shape
 
 
@@ -33,44 +33,44 @@ def _make_X(ref, alt, n_clones=4):
 
 
 # ---------------------------------------------------------------------------
-# _validate_X tests
+# validate_X tests
 # ---------------------------------------------------------------------------
 
 
-def test_validate_X_valid_returns_int64_contiguous():
+def testvalidate_X_valid_returns_int64_contiguous():
     X = np.ones((5, 3, 2), dtype=np.float32)
-    out = ReadCountUtils._validate_X(X)
+    out = ReadCountUtils.validate_X(X)
     assert out.dtype == np.int64
     assert out.flags["C_CONTIGUOUS"]
     assert out.shape == (5, 3, 2)
 
 
-def test_validate_X_preserves_values():
+def testvalidate_X_preserves_values():
     X = np.array([[[10, 20], [30, 40]]], dtype=np.int32)
-    out = ReadCountUtils._validate_X(X)
+    out = ReadCountUtils.validate_X(X)
     np.testing.assert_array_equal(out, X)
 
 
-def test_validate_X_wrong_ndim_raises():
+def testvalidate_X_wrong_ndim_raises():
     with pytest.raises(ValueError, match="shape"):
-        ReadCountUtils._validate_X(np.ones((5, 3)))
+        ReadCountUtils.validate_X(np.ones((5, 3)))
 
 
-def test_validate_X_wrong_last_dim_raises():
+def testvalidate_X_wrong_last_dim_raises():
     with pytest.raises(ValueError, match="shape"):
-        ReadCountUtils._validate_X(np.ones((5, 3, 3)))
+        ReadCountUtils.validate_X(np.ones((5, 3, 3)))
 
 
-def test_validate_X_1d_raises():
+def testvalidate_X_1d_raises():
     with pytest.raises(ValueError, match="shape"):
-        ReadCountUtils._validate_X(np.ones(10))
+        ReadCountUtils.validate_X(np.ones(10))
 
 
-def test_validate_X_already_int64_still_contiguous():
+def testvalidate_X_already_int64_still_contiguous():
     """Even when the dtype is already correct the result must be contiguous."""
     base = np.ones((4, 2, 2), dtype=np.int64)
     sliced = base[:, :, :]  # still contiguous, but a view
-    out = ReadCountUtils._validate_X(sliced)
+    out = ReadCountUtils.validate_X(sliced)
     assert out.flags["C_CONTIGUOUS"]
 
 
@@ -246,12 +246,12 @@ def test_read_count_utils_not_in_top_level_namespace():
     )
 
 
-def test_validate_X_accessible_on_all_model_classes():
-    """_validate_X is callable on each concrete class without instantiation."""
+def testvalidate_X_accessible_on_all_model_classes():
+    """validate_X is callable on each concrete class without instantiation."""
     from pGermlinePoly import ProbGermline, BetaOverdispersion, MutectLOD
     X = np.ones((3, 2, 2), dtype=np.float32)
     for cls in (ProbGermline, BetaOverdispersion, MutectLOD):
-        out = cls._validate_X(X)
+        out = cls.validate_X(X)
         assert out.dtype == np.int64
 
 

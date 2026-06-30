@@ -29,7 +29,7 @@ class ReadCountUtils:
     """
 
     @staticmethod
-    def _validate_X(X):
+    def validate_X(X):
         """Validate shape and return a contiguous int64 copy.
 
         Parameters
@@ -126,7 +126,7 @@ class ProbGermline(ReadCountUtils):
     """
 
     def __init__(self, X, Theta, Phi=None, kappa=100.0, mu=1e-3):
-        self.X = self._validate_X(X)
+        self.X = self.validate_X(X)
         self.M, self.J, _ = self.X.shape
         assert Theta.ndim == 2
         M, self.L = Theta.shape
@@ -853,7 +853,7 @@ class MutectLOD(ReadCountUtils):
     """
 
     def __init__(self, X):
-        self.X = self._validate_X(X)
+        self.X = self.validate_X(X)
         self.M, self.J, _ = self.X.shape
         self.p_germline = None
         self.lod = None
@@ -954,7 +954,7 @@ class BetaOverdispersion(ReadCountUtils):
     """
 
     def __init__(self, X):
-        self.X = self._validate_X(X)
+        self.X = self.validate_X(X)
         self.M, self.J, _ = self.X.shape
 
     def estimate_rhos(self):
