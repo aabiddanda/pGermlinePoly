@@ -148,6 +148,17 @@ logging.basicConfig(
     default="-",
     help="Output VCF file (defaults to stdout)",
 )
+@click.option(
+    "--reorient/--no-reorient",
+    required=False,
+    default=True,
+    help=(
+        "Re-orient sites where the pooled alt frequency exceeds 0.5 so that "
+        "the alt column always tracks the minority allele during modeling. "
+        "mleVAF is always reported relative to the original ALT allele. "
+        "Disable with --no-reorient to reproduce pre-v0.0.5 behaviour."
+    ),
+)
 def main(
     vcf,
     germline_vcf,
@@ -163,6 +174,7 @@ def main(
     betabinomial,
     geno,
     out,
+    reorient,
 ):
     """Run the pGermlinePoly inference pipeline on an input VCF.
 
@@ -215,6 +227,13 @@ def main(
     logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
     logging.info("Finished imputing missing annotations!")
+    if reorient:
+        logging.info("Re-orienting sites to the minor allele...")
+        p_germline.reorient_to_minor_allele()
+        logging.info(
+            f"Flipped {p_germline.flipped.sum()} / {p_germline.M} sites to "
+            "minor-allele orientation."
+        )
     if em:
         logging.info("Estimating Naive VAF from pooled reads...")
         p_germline.mle_vaf()
@@ -258,10 +277,25 @@ def main(
     if betabinomial:
         logging.info("Estimating rho for Beta-Binomial overdispersion ...")
         beta_disp = BetaOverdispersion(X=clone_reads)
+        if reorient:
+            beta_disp.reorient_to_minor_allele()
         rhos = beta_disp.estimate_rhos()
         logging.info("Estimated rho for Beta-Binomial overdispersion!")
     logging.info(f"Writing annotated VCF output to {out} ...")
     out_vcf = VCF(vcf, samples=samples, threads=nthreads)
+    if reorient:
+        out_vcf.add_info_to_header(
+            {
+                "ID": "minorAlleleFlipped",
+                "Number": 1,
+                "Type": "Integer",
+                "Description": (
+                    "1 if alt/ref reads were swapped before modeling so the alt "
+                    "column tracks the minor allele. mleVAF is always reported "
+                    "relative to the original ALT allele."
+                ),
+            }
+        )
     if em:
         out_vcf.add_info_to_header(
             {
@@ -276,7 +310,10 @@ def main(
                 "ID": "mleVAF",
                 "Number": 1,
                 "Type": "String",
-                "Description": "MLE estimate of variant allele frequency and 95% CI.",
+                "Description": (
+                    "MLE estimate of variant allele frequency and 95% CI "
+                    "(lo:mle:hi), always relative to the original ALT allele."
+                ),
             }
         )
     if lrt:
@@ -331,9 +368,16 @@ def main(
     write_vcf.write_header()
     i = 0
     for v in tqdm(out_vcf):
+        if reorient:
+            v.INFO["minorAlleleFlipped"] = int(p_germline.flipped[i])
         if em:
             v.INFO["ppGermlinePoly"] = pp_germline_poly[i]
-            v.INFO["mleVAF"] = f"{ci_mle_p[i, 0]}:{ci_mle_p[i, 1]}:{ci_mle_p[i, 2]}"
+            lo, mle, hi = ci_mle_p[i, 0], ci_mle_p[i, 1], ci_mle_p[i, 2]
+            if reorient and p_germline.flipped[i]:
+                # Minor-allele CI → original ALT allele: invert and swap bounds
+                v.INFO["mleVAF"] = f"{1-hi}:{1-mle}:{1-lo}"
+            else:
+                v.INFO["mleVAF"] = f"{lo}:{mle}:{hi}"
         if lrt:
             v.INFO["lrtGermlinePoly"] = loglik_ratio[i]
         if mutect2:

@@ -107,6 +107,30 @@ class ProbGermline:
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
+    def reorient_to_minor_allele(self):
+        """Re-orient all sites so that the alt column tracks the minority allele.
+
+        For each site, if the pooled alt allele frequency exceeds 0.5 the ref
+        and alt read columns in ``self.X`` are swapped in-place.  This ensures
+        that every downstream model component (error prior, Beta-Binomial
+        concentration) operates on the minority allele, regardless of the VCF
+        REF/ALT encoding.
+
+        The boolean array ``self.flipped`` (shape (M,)) records which sites
+        were swapped so callers can convert reported statistics back to the
+        original ALT-allele orientation where needed.
+
+        Call ``mle_vaf`` / ``est_vaf_CI`` *after* this method so those
+        quantities also refer to the minority allele; the CLI converts them
+        back to the original ALT perspective for output.
+        """
+        pooled_alt = self.X[:, :, 1].sum(axis=1)
+        pooled_tot = self.X.sum(axis=(1, 2)).clip(min=1)
+        self.flipped = (pooled_alt / pooled_tot) > 0.5
+        tmp = self.X[self.flipped, :, 0].copy()
+        self.X[self.flipped, :, 0] = self.X[self.flipped, :, 1]
+        self.X[self.flipped, :, 1] = tmp
+
     def mle_vaf(self, naive=True, eps=1e-3, **kwargs):
         """Estimate the per-site MLE variant allele frequency from pooled clone reads.
 
@@ -903,6 +927,24 @@ class BetaOverdispersion:
         assert X.shape[2] == 2  # only bi-allelic variants ...
         self.X = X
         self.M, self.J, _ = self.X.shape
+
+    def reorient_to_minor_allele(self):
+        """Re-orient all sites so that the alt column tracks the minority allele.
+
+        Mirrors :meth:`~pGermlinePoly.ProbGermline.reorient_to_minor_allele`.
+        For sites where the pooled alt allele frequency exceeds 0.5 the ref
+        and alt read columns are swapped in-place.  Stores ``self.flipped``
+        (bool array, shape (M,)).
+
+        Although rho is mathematically symmetric in alt/ref, keeping
+        ``phat`` ≤ 0.5 avoids numerical edge cases when ``phat → 1``.
+        """
+        pooled_alt = self.X[:, :, 1].sum(axis=1)
+        pooled_tot = self.X.sum(axis=(1, 2)).clip(min=1)
+        self.flipped = (pooled_alt / pooled_tot) > 0.5
+        tmp = self.X[self.flipped, :, 0].copy()
+        self.X[self.flipped, :, 0] = self.X[self.flipped, :, 1]
+        self.X[self.flipped, :, 1] = tmp
 
     def estimate_rhos(self):
         """Estimate the per-site overdispersion parameter rho.
