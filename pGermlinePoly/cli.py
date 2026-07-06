@@ -16,6 +16,7 @@ from pGermlinePoly.io import (
     create_germline_anno,
     create_anno,
     create_read_matrix,
+    parse_annotation,
 )
 
 # Setup the logging configuration for the CLI
@@ -223,6 +224,9 @@ def main(
     else:
         full_anno = anno
 
+    # Prepend intercept so the logit prior has a learnable baseline.
+    # Without it, sites with annotation = 0 are locked at logit = 0 (prior = 0.5).
+    full_anno = np.hstack([np.ones((full_anno.shape[0], 1)), full_anno])
     p_germline = ProbGermline(X=clone_reads, Theta=full_anno, mu=eps)
     logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
@@ -356,12 +360,13 @@ def main(
             }
         )
     if em:
+        raw_anno_names = [parse_annotation(a)[0] for a in config["annotations"]]
         if "germline" in config:
-            for a, lhat in zip(["germline"] + config["annotations"], lambdas_hat):
-                out_vcf.add_to_header(f"##lambda_{a}={lhat}")
+            anno_names = ["intercept", "germline"] + raw_anno_names
         else:
-            for a, lhat in zip(config["annotations"], lambdas_hat):
-                out_vcf.add_to_header(f"##lambda_{a}={lhat}")
+            anno_names = ["intercept"] + raw_anno_names
+        for a, lhat in zip(anno_names, lambdas_hat):
+            out_vcf.add_to_header(f"##lambda_{a}={lhat}")
         out_vcf.add_to_header(f"##kappa_hat={kappa_hat}")
     out_vcf.add_to_header(f"##pGermlinePoly=run {' '.join(sys.argv[1:])}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)

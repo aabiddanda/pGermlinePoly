@@ -10,6 +10,7 @@ from pGermlinePoly.io import (
     create_germline_anno,
     create_anno,
     create_read_matrix,
+    parse_annotation,
 )
 
 # -------- 1. Testing Configs --------- #
@@ -323,3 +324,118 @@ def test_create_anno_missing_imputable(tmp_path):
     assert not np.any(np.isnan(pg.Theta)), "all NaNs should be imputed away"
     expected_mleaf_mean = np.nanmean(anno[:, 0])
     assert pg.Theta[1, 0] == pytest.approx(expected_mleaf_mean)
+
+
+# --------- 4. Annotation transforms ---------- #
+
+dict_anno_config = """
+ind: A
+age: 50
+sex: M
+clones:
+  - A-clone1
+  - A-clone2
+annotations:
+  - field: MLEAF
+    transform: log10
+  - MQ
+"""
+
+bad_transform_config = """
+ind: A
+age: 50
+sex: M
+clones:
+  - A-clone1
+  - A-clone2
+annotations:
+  - field: MLEAF
+    transform: ln
+"""
+
+
+def test_parse_annotation_string():
+    """String entries return (field, None)."""
+    field, fn = parse_annotation("MLEAF")
+    assert field == "MLEAF"
+    assert fn is None
+
+
+def test_parse_annotation_dict_with_transform():
+    """Dict entries return the field name and a callable."""
+    field, fn = parse_annotation({"field": "gnomAD_AF", "transform": "log10"})
+    assert field == "gnomAD_AF"
+    assert callable(fn)
+    assert fn(0.01) == pytest.approx(np.log10(0.01))
+
+
+def test_parse_annotation_dict_no_transform():
+    """Dict without 'transform' returns None for the function."""
+    field, fn = parse_annotation({"field": "MLEAF"})
+    assert field == "MLEAF"
+    assert fn is None
+
+
+def test_valid_config_dict_annotations(tmp_path):
+    """Config with dict-style annotation entries passes schema validation."""
+    p = tmp_path / "cfg.yaml"
+    p.write_text(dict_anno_config)
+    cfg = validate_config(p)
+    assert cfg["annotations"][0] == {"field": "MLEAF", "transform": "log10"}
+    assert cfg["annotations"][1] == "MQ"
+
+
+def test_bad_config_invalid_transform(tmp_path):
+    """Config with an unsupported transform name is rejected."""
+    p = tmp_path / "cfg.yaml"
+    p.write_text(bad_transform_config)
+    with pytest.raises(Exception):
+        validate_config(p)
+
+
+def test_check_annotations_dict_style(tmp_path):
+    """check_annotations accepts dict-style entries and looks up the field name."""
+    vcf_fp = tmp_path / "test.vcf"
+    vcf_fp.write_text(good_vcf_string)
+    vcf = VCF(str(vcf_fp))
+    check_annotations(vcf, annotations=[{"field": "MLEAF", "transform": "log10"}, "MQ"])
+
+
+def test_create_anno_log10_transform(tmp_path):
+    """log10 transform is applied column-wise; zero values are clipped to 1e-10."""
+    vcf_fp = tmp_path / "test.vcf"
+    vcf_fp.write_text(good_vcf_string)
+    raw = create_anno(VCF(str(vcf_fp)), annotations=["MLEAF"])
+    transformed = create_anno(
+        VCF(str(vcf_fp)), annotations=[{"field": "MLEAF", "transform": "log10"}]
+    )
+    assert transformed.shape == raw.shape
+    finite = np.isfinite(raw[:, 0])
+    expected = np.log10(np.maximum(raw[finite, 0], 1e-10))
+    assert np.allclose(transformed[finite, 0], expected)
+
+
+def test_create_anno_sqrt_transform(tmp_path):
+    """sqrt transform is applied column-wise."""
+    vcf_fp = tmp_path / "test.vcf"
+    vcf_fp.write_text(good_vcf_string)
+    raw = create_anno(VCF(str(vcf_fp)), annotations=["MLEAF"])
+    transformed = create_anno(
+        VCF(str(vcf_fp)), annotations=[{"field": "MLEAF", "transform": "sqrt"}]
+    )
+    finite = np.isfinite(raw[:, 0])
+    expected = np.sqrt(np.maximum(raw[finite, 0], 0.0))
+    assert np.allclose(transformed[finite, 0], expected)
+
+
+def test_create_anno_log10_clips_zero(tmp_path):
+    """log10 of a zero AF value clips to log10(1e-10) rather than -inf."""
+    vcf_fp = tmp_path / "test.vcf"
+    # Build a VCF where MLEAF=0
+    zero_af_vcf = good_vcf_string.replace("MLEAF=0.003546", "MLEAF=0")
+    vcf_fp.write_text(zero_af_vcf)
+    transformed = create_anno(
+        VCF(str(vcf_fp)), annotations=[{"field": "MLEAF", "transform": "log10"}]
+    )
+    assert np.all(np.isfinite(transformed)), "log10(0) should be clipped, not -inf"
+    assert transformed[0, 0] == pytest.approx(np.log10(1e-10))
