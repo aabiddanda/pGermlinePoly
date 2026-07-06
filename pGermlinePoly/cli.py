@@ -160,6 +160,19 @@ logging.basicConfig(
         "Disable with --no-reorient to reproduce pre-v0.0.5 behaviour."
     ),
 )
+@click.option(
+    "--anno-std",
+    required=False,
+    default=False,
+    is_flag=True,
+    type=bool,
+    help=(
+        "Standardize each annotation column (post-transform) to zero mean and "
+        "unit variance before fitting. Improves optimizer convergence when "
+        "annotations are on very different scales. The intercept column is "
+        "never standardized."
+    ),
+)
 def main(
     vcf,
     germline_vcf,
@@ -176,6 +189,7 @@ def main(
     geno,
     out,
     reorient,
+    anno_std,
 ):
     """Run the pGermlinePoly inference pipeline on an input VCF.
 
@@ -231,6 +245,20 @@ def main(
     logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
     logging.info("Finished imputing missing annotations!")
+    if anno_std:
+        logging.info("Standardizing annotation columns (post-imputation)...")
+        # Skip column 0 (intercept); standardize annotation columns in-place.
+        for col in range(1, p_germline.Theta.shape[1]):
+            mu_col = np.nanmean(p_germline.Theta[:, col])
+            sd_col = np.nanstd(p_germline.Theta[:, col])
+            if sd_col > 1e-10:
+                p_germline.Theta[:, col] = (p_germline.Theta[:, col] - mu_col) / sd_col
+            else:
+                logging.warning(
+                    f"Annotation column {col} has near-zero variance (sd={sd_col:.2e}); "
+                    "skipping standardization for this column."
+                )
+        logging.info("Finished standardizing annotation columns!")
     if reorient:
         logging.info("Re-orienting sites to the minor allele...")
         p_germline.reorient_to_minor_allele()

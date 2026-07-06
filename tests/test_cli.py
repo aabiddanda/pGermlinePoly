@@ -728,3 +728,22 @@ def test_cli_reorient_mlevaf_always_in_range(sim_vcf_paths, tmp_path):
             assert 0.0 <= val <= 1.0, (
                 f"mleVAF component {val} is outside [0,1] in: {m.group(1)}"
             )
+
+
+def test_cli_anno_std(sim_vcf_paths, tmp_path):
+    """--anno-std runs without error and writes ppGermlinePoly to the output VCF."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf", sim_vcf_paths.vcf_fp,
+            "--config", sim_vcf_paths.cfg_fp,
+            "--em",
+            "--anno-std",
+            "-o", out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "ppGermlinePoly" in content
+    assert "##lambda_intercept=" in content
+    assert "##lambda_ExternalAF=" in content
