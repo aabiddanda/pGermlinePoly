@@ -33,6 +33,7 @@ germline_schema = {
                             "type": "string",
                             "allowed": list(SUPPORTED_TRANSFORMS),
                         },
+                        "is_af": {"type": "boolean", "required": False},
                     },
                 },
             ]
@@ -60,6 +61,45 @@ def parse_annotation(entry):
     if isinstance(entry, str):
         return entry, None
     return entry["field"], SUPPORTED_TRANSFORMS.get(entry.get("transform"))
+
+
+def is_af_annotation(entry):
+    """Return True if the annotation entry is flagged as a population allele frequency.
+
+    AF annotations are reflected (AF → 1−AF) for sites where
+    ``reorient_to_minor_allele`` swapped ref/alt, so the annotation continues
+    to describe the minor allele.  Only dict entries with ``is_af: true``
+    qualify; plain string entries always return False.
+
+    Parameters
+    ----------
+    entry : str or dict
+        Annotation entry as accepted by :func:`parse_annotation`.
+
+    Returns
+    -------
+    bool
+    """
+    if isinstance(entry, str):
+        return False
+    return bool(entry.get("is_af", False))
+
+
+def annotation_transform_name(entry):
+    """Return the transform name string for an annotation entry, or None.
+
+    Parameters
+    ----------
+    entry : str or dict
+        Annotation entry as accepted by :func:`parse_annotation`.
+
+    Returns
+    -------
+    str or None
+    """
+    if isinstance(entry, str):
+        return None
+    return entry.get("transform")
 
 
 def validate_config(config_yaml_fp, schema=germline_schema):

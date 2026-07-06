@@ -633,3 +633,83 @@ def test_reorient_flipped_attr_absent_before_call():
     assert not hasattr(pg, "flipped")
     pg.reorient_to_minor_allele()
     assert hasattr(pg, "flipped")
+
+
+# --------------------------------------------------------------------------- #
+# reflect_af_annotations tests
+# --------------------------------------------------------------------------- #
+
+def _make_pg_with_af_col(af_values, alt_fracs, n_clones=4, depth=20):
+    """Build a ProbGermline where column 1 of Theta holds raw AF values."""
+    M = len(af_values)
+    rng = np.random.default_rng(0)
+    n = np.full((M, n_clones), depth, dtype=np.int64)
+    alt = rng.binomial(n, np.array(alt_fracs)[:, None]).astype(np.int64)
+    X = np.stack([n - alt, alt], axis=-1)
+    # Theta: intercept=1, AF column
+    Theta = np.column_stack([np.ones(M), np.array(af_values, dtype=np.float64)])
+    return ProbGermline(X=X, Theta=Theta)
+
+
+def test_reflect_af_raises_without_flipped():
+    """reflect_af_annotations raises if called before reorient_to_minor_allele."""
+    pg = _make_pg_with_af_col([0.3, 0.8], [0.3, 0.8])
+    with pytest.raises(RuntimeError):
+        pg.reflect_af_annotations([1])
+
+
+def test_reflect_af_raw_no_transform():
+    """Flipped sites get AF → 1-AF; unflipped sites are unchanged."""
+    # Site 0: alt_frac=0.2 → not flipped; AF=0.3 unchanged
+    # Site 1: alt_frac=0.8 → flipped;     AF=0.9 → reflected to 0.1
+    pg = _make_pg_with_af_col([0.3, 0.9], [0.2, 0.8])
+    pg.reorient_to_minor_allele()
+    pg.reflect_af_annotations([1], transform_names=[None])
+    assert pg.Theta[0, 1] == pytest.approx(0.3)
+    assert pg.Theta[1, 1] == pytest.approx(0.1)
+
+
+def test_reflect_af_log10_transform():
+    """Reflection inverts log10, reflects raw AF, re-applies log10."""
+    import math
+    af_raw = [0.3, 0.9]
+    pg = _make_pg_with_af_col(
+        [math.log10(f) for f in af_raw],
+        [0.2, 0.8],
+    )
+    pg.reorient_to_minor_allele()
+    pg.reflect_af_annotations([1], transform_names=["log10"])
+    assert pg.Theta[0, 1] == pytest.approx(math.log10(0.3))
+    assert pg.Theta[1, 1] == pytest.approx(math.log10(1.0 - 0.9))
+
+
+def test_reflect_af_sqrt_transform():
+    """Reflection inverts sqrt, reflects raw AF, re-applies sqrt."""
+    import math
+    af_raw = [0.25, 0.81]
+    pg = _make_pg_with_af_col(
+        [math.sqrt(f) for f in af_raw],
+        [0.2, 0.8],
+    )
+    pg.reorient_to_minor_allele()
+    pg.reflect_af_annotations([1], transform_names=["sqrt"])
+    assert pg.Theta[0, 1] == pytest.approx(math.sqrt(0.25))
+    assert pg.Theta[1, 1] == pytest.approx(math.sqrt(1.0 - 0.81))
+
+
+def test_reflect_af_skips_nan():
+    """Sites with NaN AF are not reflected even if they were flipped."""
+    pg = _make_pg_with_af_col([0.3, float("nan")], [0.2, 0.8])
+    pg.reorient_to_minor_allele()
+    pg.reflect_af_annotations([1], transform_names=[None])
+    assert pg.Theta[0, 1] == pytest.approx(0.3)   # not flipped, unchanged
+    assert np.isnan(pg.Theta[1, 1])                # flipped but NaN → still NaN
+
+
+def test_reflect_af_clips_boundary():
+    """AF near 0 or 1 after reflection is clipped to [0, 1] without producing NaN/inf."""
+    # AF=1.0 → reflected raw = 0.0 → log10 clips to 1e-10
+    pg = _make_pg_with_af_col([np.log10(1.0 - 1e-12)], [0.9])
+    pg.reorient_to_minor_allele()
+    pg.reflect_af_annotations([1], transform_names=["log10"])
+    assert np.isfinite(pg.Theta[0, 1])

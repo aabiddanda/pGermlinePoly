@@ -64,10 +64,26 @@ def sim_vcf_paths(tmp_path_factory):
         )
     )
 
+    cfg_af_fp = d / "config_af.yaml"
+    cfg_af_fp.write_text(
+        yaml.dump(
+            {
+                "ind": "IndA",
+                "age": 50,
+                "sex": "M",
+                "clones": [f"Aclone{i}" for i in range(5)],
+                "annotations": [
+                    {"field": "ExternalAF", "transform": "log10", "is_af": True}
+                ],
+            }
+        )
+    )
+
     return types.SimpleNamespace(
         vcf_fp=vcf_fp,
         cfg_fp=cfg_fp,
         cfg_germline_fp=cfg_germline_fp,
+        cfg_af_fp=cfg_af_fp,
     )
 
 
@@ -739,6 +755,24 @@ def test_cli_anno_std(sim_vcf_paths, tmp_path):
             "--config", sim_vcf_paths.cfg_fp,
             "--em",
             "--anno-std",
+            "-o", out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "ppGermlinePoly" in content
+    assert "##lambda_intercept=" in content
+    assert "##lambda_ExternalAF=" in content
+
+
+def test_cli_reflect_af_annotations(sim_vcf_paths, tmp_path):
+    """is_af: true triggers AF reflection for reoriented sites without errors."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf", sim_vcf_paths.vcf_fp,
+            "--config", sim_vcf_paths.cfg_af_fp,
+            "--em",
             "-o", out_fp,
         ]
     )
