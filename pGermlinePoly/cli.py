@@ -429,7 +429,7 @@ def main(
             lo, mle, hi = ci_mle_p[i, 0], ci_mle_p[i, 1], ci_mle_p[i, 2]
             if reorient and p_germline.flipped[i]:
                 # Minor-allele CI → original ALT allele: invert and swap bounds
-                v.INFO["mleVAF"] = f"{1-hi}:{1-mle}:{1-lo}"
+                v.INFO["mleVAF"] = f"{1 - hi}:{1 - mle}:{1 - lo}"
             else:
                 v.INFO["mleVAF"] = f"{lo}:{mle}:{hi}"
         if lrt:

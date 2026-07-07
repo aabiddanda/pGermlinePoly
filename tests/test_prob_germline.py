@@ -562,7 +562,9 @@ def test_reorient_minor_allele_always_le_half():
 def test_reorient_swaps_columns_correctly():
     """For a flipped site the new alt column equals the original ref column."""
     ref_counts, alt_counts = 30, 70  # alt > 50 % → will be flipped
-    X = _make_uniform_X(n_sites=1, n_clones=5, alt_per_clone=alt_counts, ref_per_clone=ref_counts)
+    X = _make_uniform_X(
+        n_sites=1, n_clones=5, alt_per_clone=alt_counts, ref_per_clone=ref_counts
+    )
     A = np.zeros((1, 1))
     pg = ProbGermline(X=X, Theta=A)
     pg.reorient_to_minor_allele()
@@ -639,6 +641,7 @@ def test_reorient_flipped_attr_absent_before_call():
 # reflect_af_annotations tests
 # --------------------------------------------------------------------------- #
 
+
 def _make_pg_with_af_col(af_values, alt_fracs, n_clones=4, depth=20):
     """Build a ProbGermline where column 1 of Theta holds raw AF values."""
     M = len(af_values)
@@ -672,6 +675,7 @@ def test_reflect_af_raw_no_transform():
 def test_reflect_af_log10_transform():
     """Reflection inverts log10, reflects raw AF, re-applies log10."""
     import math
+
     af_raw = [0.3, 0.9]
     pg = _make_pg_with_af_col(
         [math.log10(f) for f in af_raw],
@@ -686,6 +690,7 @@ def test_reflect_af_log10_transform():
 def test_reflect_af_sqrt_transform():
     """Reflection inverts sqrt, reflects raw AF, re-applies sqrt."""
     import math
+
     af_raw = [0.25, 0.81]
     pg = _make_pg_with_af_col(
         [math.sqrt(f) for f in af_raw],
@@ -702,8 +707,8 @@ def test_reflect_af_skips_nan():
     pg = _make_pg_with_af_col([0.3, float("nan")], [0.2, 0.8])
     pg.reorient_to_minor_allele()
     pg.reflect_af_annotations([1], transform_names=[None])
-    assert pg.Theta[0, 1] == pytest.approx(0.3)   # not flipped, unchanged
-    assert np.isnan(pg.Theta[1, 1])                # flipped but NaN → still NaN
+    assert pg.Theta[0, 1] == pytest.approx(0.3)  # not flipped, unchanged
+    assert np.isnan(pg.Theta[1, 1])  # flipped but NaN → still NaN
 
 
 def test_reflect_af_clips_boundary():

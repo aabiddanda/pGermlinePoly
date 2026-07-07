@@ -304,10 +304,12 @@ def test_create_anno_missing_field_yields_nan(tmp_path):
     vcf_fp.write_text(vcf_with_missing_anno)
     anno = create_anno(VCF(str(vcf_fp)), annotations=["MLEAF", "MQ"])
     assert anno.shape == (2, 2)
-    assert np.issubdtype(anno.dtype, np.floating), f"expected float dtype, got {anno.dtype}"
+    assert np.issubdtype(anno.dtype, np.floating), (
+        f"expected float dtype, got {anno.dtype}"
+    )
     assert not np.isnan(anno[0, 0])  # MLEAF present in record 1
     assert not np.isnan(anno[0, 1])  # MQ present in record 1
-    assert np.isnan(anno[1, 0])      # MLEAF absent in record 2 -> NaN
+    assert np.isnan(anno[1, 0])  # MLEAF absent in record 2 -> NaN
     assert not np.isnan(anno[1, 1])  # MQ present in record 2
 
 
@@ -445,6 +447,7 @@ def test_create_anno_log10_clips_zero(tmp_path):
 
 # --------- 5. is_af_annotation and annotation_transform_name ---------- #
 
+
 def test_is_af_annotation_string():
     """Plain string entries are never AF annotations."""
     assert not is_af_annotation("MLEAF")
@@ -468,7 +471,10 @@ def test_annotation_transform_name_string():
 
 def test_annotation_transform_name_dict():
     """Dict entries return the transform name string."""
-    assert annotation_transform_name({"field": "gnomAD_AF", "transform": "log10"}) == "log10"
+    assert (
+        annotation_transform_name({"field": "gnomAD_AF", "transform": "log10"})
+        == "log10"
+    )
     assert annotation_transform_name({"field": "gnomAD_AF"}) is None
 
 
