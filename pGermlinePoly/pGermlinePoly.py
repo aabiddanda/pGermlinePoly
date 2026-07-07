@@ -169,9 +169,20 @@ class ProbGermline(ReadCountUtils):
         col_fill_values : dict of {int: float}, optional
             Per-column fill values that override the column-wise mean for
             specific columns.  Keys are column indices into ``self.Theta``.
-            Use this for allele-frequency annotations where missing entries
-            should be treated as very rare (e.g. absent from gnomAD) rather
-            than as average-frequency variants.
+
+            This is important for population allele-frequency (AF) annotations
+            where missingness is *informative*, not random.  A site absent from
+            gnomAD was never observed at detectable frequency — direct evidence
+            that the allele is rare.  By contrast, the column mean is computed
+            only over sites *present* in the database, which skews toward common
+            variants.  Imputing missing sites with that mean assigns them a
+            "common germline het" prior, which is the opposite of what absence
+            implies and collapses the annotation's discriminative power.
+
+            Pass a floor value well below the minimum observed value (e.g.
+            ``nanmin(col) - 2`` in log10 space, placing missing sites two orders
+            of magnitude below the rarest in-DB entry) so that absent sites
+            receive a low-AF prior consistent with their likely rarity.
         """
         assert self.Theta is not None
         col_means = np.nanmean(self.Theta, axis=0)
