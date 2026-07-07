@@ -137,9 +137,9 @@ def test_reorient_flipped_mask_boundary():
     """Exactly 50 % alt is NOT flipped (strict > 0.5 threshold)."""
     X = np.array(
         [
-            [[50, 50], [50, 50]],   # 50 % — not flipped
-            [[30, 70], [30, 70]],   # 70 % — flipped
-            [[80, 20], [80, 20]],   # 20 % — not flipped
+            [[50, 50], [50, 50]],  # 50 % — not flipped
+            [[30, 70], [30, 70]],  # 70 % — flipped
+            [[80, 20], [80, 20]],  # 20 % — not flipped
         ],
         dtype=np.int64,
     )
@@ -226,21 +226,25 @@ def test_reorient_symmetry():
 
 def test_prob_germline_inherits_read_count_utils():
     from pGermlinePoly import ProbGermline
+
     assert issubclass(ProbGermline, ReadCountUtils)
 
 
 def test_beta_overdispersion_inherits_read_count_utils():
     from pGermlinePoly import BetaOverdispersion
+
     assert issubclass(BetaOverdispersion, ReadCountUtils)
 
 
 def test_mutect_lod_inherits_read_count_utils():
     from pGermlinePoly import MutectLOD
+
     assert issubclass(MutectLOD, ReadCountUtils)
 
 
 def test_read_count_utils_not_in_top_level_namespace():
     import pGermlinePoly
+
     assert not hasattr(pGermlinePoly, "ReadCountUtils"), (
         "ReadCountUtils should not be exported at the top-level package namespace"
     )
@@ -249,6 +253,7 @@ def test_read_count_utils_not_in_top_level_namespace():
 def testvalidate_X_accessible_on_all_model_classes():
     """validate_X is callable on each concrete class without instantiation."""
     from pGermlinePoly import ProbGermline, BetaOverdispersion, MutectLOD
+
     X = np.ones((3, 2, 2), dtype=np.float32)
     for cls in (ProbGermline, BetaOverdispersion, MutectLOD):
         out = cls.validate_X(X)
@@ -257,6 +262,7 @@ def testvalidate_X_accessible_on_all_model_classes():
 
 def test_pooled_vaf_accessible_on_all_model_classes():
     from pGermlinePoly import BetaOverdispersion, MutectLOD
+
     X = np.ones((4, 3, 2), dtype=np.int64) * 10
     for cls in (BetaOverdispersion, MutectLOD):
         obj = cls(X=X)
