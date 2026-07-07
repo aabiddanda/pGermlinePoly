@@ -159,9 +159,22 @@ class ProbGermline(ReadCountUtils):
 
         Replaces NaN entries in ``self.Theta`` in-place with the mean of the
         corresponding annotation column, computed over all non-missing sites.
+        Columns that are entirely NaN (no observed values) are filled with 0.0
+        and a warning is emitted; such columns carry no information and will be
+        assigned zero weight by the optimizer.
         """
         assert self.Theta is not None
         col_means = np.nanmean(self.Theta, axis=0)
+        all_nan_mask = np.isnan(col_means)
+        self.all_nan_cols = set(int(c) for c in np.where(all_nan_mask)[0])
+        for c in sorted(self.all_nan_cols):
+            logger.warning(
+                "Annotation column %d is entirely NaN (no observed values); "
+                "filling with 0.0. This column will have no effect on the model. "
+                "Check that the INFO field name in your config matches the VCF.",
+                c,
+            )
+            col_means[c] = 0.0
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
@@ -217,7 +230,7 @@ class ProbGermline(ReadCountUtils):
             if tname == "log10":
                 raw_af = np.power(10.0, vals)
             elif tname == "sqrt":
-                raw_af = vals ** 2
+                raw_af = vals**2
             else:
                 raw_af = vals
             # Reflect: minor allele frequency of original ALT = 1 - AF
@@ -679,7 +692,7 @@ class ProbGermline(ReadCountUtils):
         e_step_all(self.X, logit_phi, logit_pi, self.mu, kappa, eta, gammas)
         return eta, gammas
 
-    def _m_step_lambda_beta(self, eta, gammas, lambdas0, betas0, algo="L-BFGS-B"):
+    def m_step_lambda_beta(self, eta, gammas, lambdas0, betas0, algo="L-BFGS-B"):
         """Run the M-step to update annotation weights via weighted logistic regression.
 
         Minimises the negative Q function with respect to (lambda, beta) using
@@ -744,6 +757,15 @@ class ProbGermline(ReadCountUtils):
             tol=1e-8,
             options={"disp": False},
         )
+        if not opt.success:
+            logger.warning(
+                "M-step optimizer (%s) did not converge: %s. "
+                "Returning current iterate; weights may be unreliable. "
+                "If all annotation lambdas are zero, check for all-NaN "
+                "annotation columns (run impute_anno() first).",
+                algo,
+                opt.message,
+            )
         return opt.x[:L], opt.x[L:]
 
     def _m_step_kappa(self, gammas):
@@ -850,7 +872,7 @@ class ProbGermline(ReadCountUtils):
             eta, gammas = self._e_step(lambdas, betas, kappa)
 
             # M-step: logistic weights
-            lambdas, betas = self._m_step_lambda_beta(
+            lambdas, betas = self.m_step_lambda_beta(
                 eta, gammas, lambdas, betas, algo=algo
             )
 
