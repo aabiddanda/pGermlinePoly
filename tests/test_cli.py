@@ -107,6 +107,8 @@ def test_cli_em_default(sim_vcf_paths, tmp_path):
     assert "##lambda_ExternalAF=" in content
     assert "##kappa_hat=" in content
     assert "##pGermlinePoly=run" in content
+    # minorAlleleFlipped is present by default (--reorient is on)
+    assert "minorAlleleFlipped" in content
     # Optional fields must be absent when flags not passed
     assert "lrtGermlinePoly" not in content
     assert "lodMutect" not in content
@@ -661,3 +663,87 @@ def test_cli_all_flags_missing_annotations(sim_vcf_missing_anno_paths, tmp_path)
     content = out_fp.read_text()
     for field in ("ppGermlinePoly", "lrtGermlinePoly", "lodMutect", "rhobeta", "ppGermlineGeno"):
         assert field in content, f"Expected INFO field '{field}' missing from output"
+
+
+# ---------------------------------------------------------------------------
+# --reorient / --no-reorient tests
+# ---------------------------------------------------------------------------
+
+
+def test_cli_reorient_default_adds_info_field(sim_vcf_paths, tmp_path):
+    """minorAlleleFlipped appears in header and data records by default."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf", sim_vcf_paths.vcf_fp,
+            "--config", sim_vcf_paths.cfg_fp,
+            "--em",
+            "-o", out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "minorAlleleFlipped" in content
+    data_lines = [l for l in content.splitlines() if not l.startswith("#")]
+    assert any("minorAlleleFlipped=" in l for l in data_lines)
+
+
+def test_cli_no_reorient_omits_info_field(sim_vcf_paths, tmp_path):
+    """--no-reorient suppresses the minorAlleleFlipped INFO field entirely."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf", sim_vcf_paths.vcf_fp,
+            "--config", sim_vcf_paths.cfg_fp,
+            "--em",
+            "--no-reorient",
+            "-o", out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    assert "minorAlleleFlipped" not in out_fp.read_text()
+
+
+def test_cli_reorient_mlevaf_always_in_range(sim_vcf_paths, tmp_path):
+    """With --reorient (default), all mleVAF values must be in [0, 1] after back-conversion."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf", sim_vcf_paths.vcf_fp,
+            "--config", sim_vcf_paths.cfg_fp,
+            "--em",
+            "-o", out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    mlevaf_re = re.compile(r"mleVAF=([^;\s]+)")
+    for line in out_fp.read_text().splitlines():
+        if line.startswith("#"):
+            continue
+        m = mlevaf_re.search(line)
+        if m is None:
+            continue
+        for part in m.group(1).split(":"):
+            val = float(part)
+            assert 0.0 <= val <= 1.0, (
+                f"mleVAF component {val} is outside [0,1] in: {m.group(1)}"
+            )
+
+
+def test_cli_anno_std(sim_vcf_paths, tmp_path):
+    """--anno-std runs without error and writes ppGermlinePoly to the output VCF."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf", sim_vcf_paths.vcf_fp,
+            "--config", sim_vcf_paths.cfg_fp,
+            "--em",
+            "--anno-std",
+            "-o", out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "ppGermlinePoly" in content
+    assert "##lambda_intercept=" in content
+    assert "##lambda_ExternalAF=" in content

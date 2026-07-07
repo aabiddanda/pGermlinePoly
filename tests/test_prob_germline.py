@@ -508,3 +508,128 @@ def test_germline_genotype_invalid_p_hom_alt():
         pg.est_germline_genotype(p_hom_alt=0.0)
     with pytest.raises(ValueError, match="p_hom_alt"):
         pg.est_germline_genotype(p_hom_alt=1.0)
+
+
+# ---------------------------------------------------------------------------
+# reorient_to_minor_allele tests
+# ---------------------------------------------------------------------------
+
+
+def _make_uniform_X(n_sites, n_clones, alt_per_clone, ref_per_clone):
+    """Build an (M, J, 2) array with fixed [ref, alt] counts at every cell."""
+    X = np.zeros((n_sites, n_clones, 2), dtype=np.int64)
+    X[:, :, 0] = ref_per_clone
+    X[:, :, 1] = alt_per_clone
+    return X
+
+
+def test_reorient_flipped_mask_high_alt():
+    """Sites with pooled alt > 50 % get flipped=True; others get flipped=False."""
+    # site 0: alt=70 %, site 1: alt=30 %, site 2: alt=50 % (boundary — NOT flipped)
+    X = np.array(
+        [
+            [[30, 70], [30, 70]],  # alt=70 %
+            [[70, 30], [70, 30]],  # alt=30 %
+            [[50, 50], [50, 50]],  # alt=50 % — strictly > 0.5 not met
+        ],
+        dtype=np.int64,
+    )
+    A = np.zeros((3, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    pg.reorient_to_minor_allele()
+
+    assert pg.flipped[0] is np.bool_(True), "70 % alt site should be flipped"
+    assert pg.flipped[1] is np.bool_(False), "30 % alt site should not be flipped"
+    assert pg.flipped[2] is np.bool_(False), "50 % alt site should not be flipped"
+
+
+def test_reorient_minor_allele_always_le_half():
+    """After re-orientation, every site has pooled alt frequency ≤ 0.5."""
+    rng = np.random.default_rng(0)
+    M, J = 40, 8
+    n = rng.integers(10, 50, size=(M, J))
+    a = rng.integers(0, n + 1)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    A = np.zeros((M, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    pg.reorient_to_minor_allele()
+
+    pooled_alt = pg.X[:, :, 1].sum(axis=1)
+    pooled_tot = pg.X.sum(axis=(1, 2))
+    assert np.all(pooled_alt / pooled_tot <= 0.5 + 1e-9)
+
+
+def test_reorient_swaps_columns_correctly():
+    """For a flipped site the new alt column equals the original ref column."""
+    ref_counts, alt_counts = 30, 70  # alt > 50 % → will be flipped
+    X = _make_uniform_X(n_sites=1, n_clones=5, alt_per_clone=alt_counts, ref_per_clone=ref_counts)
+    A = np.zeros((1, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    pg.reorient_to_minor_allele()
+
+    assert pg.flipped[0]
+    assert np.all(pg.X[0, :, 1] == ref_counts), "new alt should be old ref"
+    assert np.all(pg.X[0, :, 0] == alt_counts), "new ref should be old alt"
+
+
+def test_reorient_no_sites_to_flip():
+    """Method runs without error when all sites already have alt ≤ 50 %."""
+    X = _make_uniform_X(n_sites=10, n_clones=4, alt_per_clone=20, ref_per_clone=80)
+    A = np.zeros((10, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    pg.reorient_to_minor_allele()
+
+    assert not pg.flipped.any()
+    assert np.all(pg.X[:, :, 1] == 20)  # unchanged
+
+
+def test_reorient_all_sites_flipped():
+    """Method runs without error when every site has alt > 50 %."""
+    X = _make_uniform_X(n_sites=10, n_clones=4, alt_per_clone=80, ref_per_clone=20)
+    A = np.zeros((10, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    pg.reorient_to_minor_allele()
+
+    assert pg.flipped.all()
+    assert np.all(pg.X[:, :, 1] == 20)  # all now show minor allele = original ref
+
+
+def test_reorient_symmetry_pp_germline():
+    """ppGermlinePoly must be identical for mirror-image datasets after re-orientation.
+
+    Two datasets that are exact reflections of each other (alt=p vs alt=1-p across
+    all clones) should produce the same ppGermlinePoly once both are re-oriented to
+    the minor allele, because they become bit-for-bit identical inputs to the model.
+    """
+    rng = np.random.default_rng(7)
+    M, J, cov = 20, 10, 30
+    n = rng.poisson(cov, size=(M, J))
+    # Dataset A: alt reads drawn at 30 % per clone
+    a_low = rng.binomial(n, 0.3)
+    X_low = np.stack([n - a_low, a_low], axis=-1).astype(np.int64)
+    # Dataset B: same total depths, alt reads = ref counts from A (mirror image)
+    X_high = np.stack([a_low, n - a_low], axis=-1).astype(np.int64)
+
+    A = np.zeros((M, 1))
+
+    pg_low = ProbGermline(X=X_low, Theta=A.copy())
+    pg_low.reorient_to_minor_allele()
+    pp_low = pg_low.post_prob_poly(lambdas=np.zeros(1))
+
+    pg_high = ProbGermline(X=X_high, Theta=A.copy())
+    pg_high.reorient_to_minor_allele()
+    pp_high = pg_high.post_prob_poly(lambdas=np.zeros(1))
+
+    assert np.allclose(pp_low, pp_high, atol=1e-10), (
+        "ppGermlinePoly should be the same for mirror-image datasets after re-orientation"
+    )
+
+
+def test_reorient_flipped_attr_absent_before_call():
+    """``self.flipped`` does not exist before reorient_to_minor_allele is called."""
+    X = _make_uniform_X(n_sites=3, n_clones=2, alt_per_clone=10, ref_per_clone=90)
+    A = np.zeros((3, 1))
+    pg = ProbGermline(X=X, Theta=A)
+    assert not hasattr(pg, "flipped")
+    pg.reorient_to_minor_allele()
+    assert hasattr(pg, "flipped")
