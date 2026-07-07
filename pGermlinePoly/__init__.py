@@ -10,7 +10,7 @@ Modules exported are:
 * BetaOverdispersion: class for estimating overdispersion indicative of somatic variants using Beta-binomial model.
 """
 
-__version__ = "0.0.4b"
+__version__ = "0.0.6"
 
 from .io import *  # noqa
 from .pGermlinePoly import ClonalSim, MutectLOD, ProbGermline, BetaOverdispersion  # noqa

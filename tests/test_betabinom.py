@@ -59,3 +59,66 @@ def test_betabinom_from_sim():
     assert rhos.ndim == 1
     assert rhos.size == X.shape[0]
     assert ~np.all(rhos == rhos[0])
+
+
+# ---------------------------------------------------------------------------
+# reorient_to_minor_allele tests
+# ---------------------------------------------------------------------------
+
+
+def test_reorient_flipped_mask():
+    """Sites with pooled alt > 50 % are flagged; others are not."""
+    X = np.array(
+        [
+            [[20, 80], [20, 80]],  # alt=80 % → flipped
+            [[80, 20], [80, 20]],  # alt=20 % → not flipped
+            [[50, 50], [50, 50]],  # alt=50 % → not flipped (strict >)
+        ],
+        dtype=np.int64,
+    )
+    bd = BetaOverdispersion(X=X)
+    bd.reorient_to_minor_allele()
+
+    assert bd.flipped[0]
+    assert not bd.flipped[1]
+    assert not bd.flipped[2]
+
+
+def test_reorient_minor_allele_always_le_half():
+    """After re-orientation every site has pooled alt frequency ≤ 0.5."""
+    rng = np.random.default_rng(1)
+    M, J = 30, 6
+    n = rng.integers(10, 50, size=(M, J))
+    a = rng.integers(0, n + 1)
+    X = np.stack([n - a, a], axis=-1).astype(np.int64)
+    bd = BetaOverdispersion(X=X)
+    bd.reorient_to_minor_allele()
+
+    pooled_alt = bd.X[:, :, 1].sum(axis=1)
+    pooled_tot = bd.X.sum(axis=(1, 2))
+    assert np.all(pooled_alt / pooled_tot <= 0.5 + 1e-9)
+
+
+def test_reorient_rho_symmetric():
+    """rho should be the same whether alt=p or alt=1-p (BB is symmetric in alt/ref).
+
+    This validates that re-orientation does not distort the overdispersion estimate.
+    """
+    rng = np.random.default_rng(3)
+    M, J, cov = 20, 8, 40
+    n = rng.poisson(cov, size=(M, J))
+    a_low = rng.binomial(n, 0.3)
+    X_low = np.stack([n - a_low, a_low], axis=-1).astype(np.int64)
+    X_high = np.stack([a_low, n - a_low], axis=-1).astype(np.int64)
+
+    bd_low = BetaOverdispersion(X=X_low)
+    bd_low.reorient_to_minor_allele()
+    rhos_low = bd_low.estimate_rhos()
+
+    bd_high = BetaOverdispersion(X=X_high)
+    bd_high.reorient_to_minor_allele()
+    rhos_high = bd_high.estimate_rhos()
+
+    assert np.allclose(rhos_low, rhos_high, atol=1e-6), (
+        "rho must be the same for mirror-image datasets after re-orientation"
+    )

@@ -21,7 +21,66 @@ from scipy.stats import beta, binom, chi2, norm, poisson, uniform
 logger = logging.getLogger(__name__)
 
 
-class ProbGermline:
+class ReadCountUtils:
+    """Shared utilities for classes backed by an (M, J, 2) biallelic read-count array.
+
+    Not intended for direct use; inherit from this class to gain validated
+    array construction, per-site pooled VAF, and minor-allele re-orientation.
+    """
+
+    @staticmethod
+    def validate_X(X):
+        """Validate shape and return a contiguous int64 copy.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            Read-count array of shape (M, J, 2), where the last dimension
+            holds [ref_reads, alt_reads] per clone.
+
+        Returns
+        -------
+        numpy.ndarray
+            Contiguous int64 array of the same shape.
+
+        Raises
+        ------
+        ValueError
+            If X is not 3-D or its last dimension is not 2.
+        """
+        if X.ndim != 3 or X.shape[2] != 2:
+            raise ValueError(
+                "X must be a 3-D array with shape[-1] == 2 "
+                f"(ref, alt per clone), got shape {X.shape}"
+            )
+        return np.ascontiguousarray(X, dtype=np.int64)
+
+    @property
+    def pooled_vaf(self):
+        """Per-site pooled alt allele frequency, shape (M,).
+
+        Computed as alt_reads.sum(clones) / total_reads.sum(clones).
+        Sites with zero total depth receive a frequency of 0.
+        """
+        alt = self.X[:, :, 1].sum(axis=1).astype(np.float64)
+        tot = self.X.sum(axis=(1, 2)).clip(min=1).astype(np.float64)
+        return alt / tot
+
+    def reorient_to_minor_allele(self):
+        """Re-orient all sites so that the alt column tracks the minority allele.
+
+        For each site where the pooled alt allele frequency exceeds 0.5 the
+        ref and alt read columns in ``self.X`` are swapped in-place.  Stores
+        ``self.flipped`` (bool array, shape (M,)) so callers can convert
+        reported statistics back to the original ALT-allele orientation.
+        """
+        self.flipped = self.pooled_vaf > 0.5
+        tmp = self.X[self.flipped, :, 0].copy()
+        self.X[self.flipped, :, 0] = self.X[self.flipped, :, 1]
+        self.X[self.flipped, :, 1] = tmp
+
+
+class ProbGermline(ReadCountUtils):
     """Compute the posterior probability of germline polymorphism from clonal sequencing data.
 
     Implements an EM algorithm that jointly estimates logistic annotation
@@ -67,9 +126,8 @@ class ProbGermline:
     """
 
     def __init__(self, X, Theta, Phi=None, kappa=100.0, mu=1e-3):
-        assert X.ndim == 3
-        self.M, self.J, _ = X.shape
-        self.X = np.ascontiguousarray(X, dtype=np.int64)
+        self.X = self.validate_X(X)
+        self.M, self.J, _ = self.X.shape
         assert Theta.ndim == 2
         M, self.L = Theta.shape
         assert M == self.M
@@ -106,6 +164,72 @@ class ProbGermline:
         col_means = np.nanmean(self.Theta, axis=0)
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
+
+    def reflect_af_annotations(self, col_indices, transform_names=None):
+        """Reflect allele-frequency annotation columns for reoriented sites.
+
+        For each site that was flipped by :meth:`reorient_to_minor_allele`,
+        the annotation value is mapped AF → 1−AF so that it continues to
+        describe the *minor* allele rather than the original ALT allele.
+        Reflection is performed in the raw (pre-transform) space: the current
+        value is inverted back to a raw AF, reflected, and the transform
+        re-applied.  Sites with NaN annotation values are left untouched so
+        that :meth:`impute_anno` can handle them after reflection.
+
+        Must be called after :meth:`reorient_to_minor_allele` (which sets
+        ``self.flipped``) and before :meth:`impute_anno`.
+
+        Parameters
+        ----------
+        col_indices : list of int
+            Column indices into ``self.Theta`` to reflect.
+        transform_names : list of str or None, optional
+            Transform name applied to each column — ``"log10"``, ``"sqrt"``,
+            or ``None`` for raw (untransformed) AF values in [0, 1].  Must be
+            the same length as ``col_indices``.  Default is all None.
+
+        Raises
+        ------
+        RuntimeError
+            If called before :meth:`reorient_to_minor_allele`.
+        AssertionError
+            If ``transform_names`` is provided but its length does not match
+            ``col_indices``.
+        """
+        if not hasattr(self, "flipped"):
+            raise RuntimeError(
+                "reflect_af_annotations() requires self.flipped — "
+                "call reorient_to_minor_allele() first."
+            )
+        if transform_names is None:
+            transform_names = [None] * len(col_indices)
+        assert len(transform_names) == len(col_indices), (
+            f"transform_names length ({len(transform_names)}) must match "
+            f"col_indices length ({len(col_indices)})"
+        )
+        for col, tname in zip(col_indices, transform_names):
+            # Only reflect sites that were flipped AND have a finite annotation value.
+            valid = self.flipped & np.isfinite(self.Theta[:, col])
+            if not valid.any():
+                continue
+            vals = self.Theta[valid, col]
+            # Invert transform → raw AF in [0, 1]
+            if tname == "log10":
+                raw_af = np.power(10.0, vals)
+            elif tname == "sqrt":
+                raw_af = vals ** 2
+            else:
+                raw_af = vals
+            # Reflect: minor allele frequency of original ALT = 1 - AF
+            reflected_raw = np.clip(1.0 - raw_af, 0.0, 1.0)
+            # Re-apply transform
+            if tname == "log10":
+                reflected = np.log10(np.maximum(reflected_raw, 1e-10))
+            elif tname == "sqrt":
+                reflected = np.sqrt(reflected_raw)
+            else:
+                reflected = reflected_raw
+            self.Theta[valid, col] = reflected
 
     def mle_vaf(self, naive=True, eps=1e-3, **kwargs):
         """Estimate the per-site MLE variant allele frequency from pooled clone reads.
@@ -771,7 +895,7 @@ class ProbGermline:
         return np.array(loglls), lambdas, betas, kappa
 
 
-class MutectLOD:
+class MutectLOD(ReadCountUtils):
     """Compute per-site LOD scores following the Mutect2 / Williams et al. model.
 
     Parameters
@@ -795,11 +919,8 @@ class MutectLOD:
     """
 
     def __init__(self, X):
-        assert X.ndim == 3
-        if X.shape[2] != 2:
-            raise ValueError("Only biallelic variants are tolerated here ...")
-        self.X = X
-        self.M, self.J, _ = X.shape
+        self.X = self.validate_X(X)
+        self.M, self.J, _ = self.X.shape
         self.p_germline = None
         self.lod = None
 
@@ -884,7 +1005,7 @@ class MutectLOD:
         self.lod_germline = lod_germline
 
 
-class BetaOverdispersion:
+class BetaOverdispersion(ReadCountUtils):
     """Estimate per-site overdispersion under the Beta-Binomial model.
 
     Implements the overdispersion test from Spencer-Chapman et al. by fitting
@@ -899,9 +1020,7 @@ class BetaOverdispersion:
     """
 
     def __init__(self, X):
-        assert X.ndim == 3
-        assert X.shape[2] == 2  # only bi-allelic variants ...
-        self.X = X
+        self.X = self.validate_X(X)
         self.M, self.J, _ = self.X.shape
 
     def estimate_rhos(self):

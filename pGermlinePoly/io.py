@@ -6,14 +6,106 @@ from cerberus import Validator
 from poly_utils import geno_loglik
 from tqdm import tqdm
 
+# Supported per-annotation transforms.  Values are applied element-wise;
+# domain-clipping keeps 0 and negative inputs from producing -inf / NaN.
+SUPPORTED_TRANSFORMS = {
+    "log10": lambda x: np.log10(np.maximum(x, 1e-10)),
+    "sqrt": lambda x: np.sqrt(np.maximum(x, 0.0)),
+}
+
 germline_schema = {
     "ind": {"required": True, "type": "string"},
     "sex": {"required": True, "type": "string", "maxlength": 1, "allowed": ["M", "F"]},
     "age": {"required": True, "type": "number", "min": 0.0},
     "germline": {"required": False, "type": "list", "schema": {"type": "string"}},
     "clones": {"required": True, "type": "list", "schema": {"type": "string"}},
-    "annotations": {"required": True, "type": "list"},
+    "annotations": {
+        "required": True,
+        "type": "list",
+        "schema": {
+            "anyof": [
+                {"type": "string"},
+                {
+                    "type": "dict",
+                    "schema": {
+                        "field": {"required": True, "type": "string"},
+                        "transform": {
+                            "type": "string",
+                            "allowed": list(SUPPORTED_TRANSFORMS),
+                        },
+                        "is_af": {"type": "boolean", "required": False},
+                    },
+                },
+            ]
+        },
+    },
 }
+
+
+def parse_annotation(entry):
+    """Return ``(field_name, transform_fn)`` from a string or dict annotation entry.
+
+    Parameters
+    ----------
+    entry : str or dict
+        Either a plain INFO field name (string) or a dict with keys ``"field"``
+        (required) and ``"transform"`` (optional, one of ``SUPPORTED_TRANSFORMS``).
+
+    Returns
+    -------
+    field_name : str
+        INFO field name to extract from the VCF.
+    transform_fn : callable or None
+        Function to apply element-wise to the extracted column, or None.
+    """
+    if isinstance(entry, str):
+        return entry, None
+    return entry["field"], SUPPORTED_TRANSFORMS.get(entry.get("transform"))
+
+
+def is_af_annotation(entry):
+    """Return True if the annotation entry is flagged as a population allele frequency.
+
+    AF annotations are reflected (AF → 1−AF) for sites where
+    ``reorient_to_minor_allele`` swapped ref/alt, so the annotation continues
+    to describe the minor allele.  Only dict entries with ``is_af: true``
+    qualify; plain string entries always return False.
+
+    Parameters
+    ----------
+    entry : str or dict
+        Annotation entry as accepted by :func:`parse_annotation`.
+
+    Returns
+    -------
+    bool
+        True if ``entry`` is a dict with ``is_af: true``, False otherwise.
+    """
+    if isinstance(entry, str):
+        return False
+    return bool(entry.get("is_af", False))
+
+
+def annotation_transform_name(entry):
+    """Return the transform name string for an annotation entry, or None.
+
+    Useful when the transform name (rather than the callable) is needed —
+    for example to invert a transform before reflecting an allele frequency.
+
+    Parameters
+    ----------
+    entry : str or dict
+        Annotation entry as accepted by :func:`parse_annotation`.
+
+    Returns
+    -------
+    str or None
+        One of the keys in :data:`SUPPORTED_TRANSFORMS` if a transform was
+        specified, otherwise None.
+    """
+    if isinstance(entry, str):
+        return None
+    return entry.get("transform")
 
 
 def validate_config(config_yaml_fp, schema=germline_schema):
@@ -65,14 +157,16 @@ def check_samples(vcf, samples=[]):
 def check_annotations(vcf, annotations=["PL", "AD"]):
     """Assert that required annotation fields are declared in the VCF header.
 
-    Checks both INFO and FORMAT fields via ``vcf.contains``.
+    Checks both INFO and FORMAT fields via ``vcf.contains``.  Each entry in
+    ``annotations`` may be a plain string (field name) or a dict with a
+    ``"field"`` key (see :func:`parse_annotation`).
 
     Parameters
     ----------
     vcf : cyvcf2.VCF
         Opened VCF object.
-    annotations : list of str, optional
-        Annotation field IDs to verify. Default is ``["PL", "AD"]``.
+    annotations : list of str or dict, optional
+        Annotation entries to verify. Default is ``["PL", "AD"]``.
 
     Raises
     ------
@@ -80,7 +174,8 @@ def check_annotations(vcf, annotations=["PL", "AD"]):
         If any field ID in ``annotations`` is not declared in the VCF header.
     """
     for a in annotations:
-        assert vcf.contains(a)
+        field, _ = parse_annotation(a)
+        assert vcf.contains(field)
 
 
 def create_germline_anno(vcf, **kwargs):
@@ -127,29 +222,39 @@ def create_anno(vcf, annotations=[]):
 
     Iterates over all variants, collecting the requested INFO field values
     for biallelic SNPs. Non-SNP or multiallelic sites receive NaN for all
-    requested annotations.
+    requested annotations.  Per-annotation transforms (e.g. ``log10``,
+    ``sqrt``) are applied column-wise after extraction; NaN values pass
+    through unchanged and can be imputed later via
+    :meth:`~pGermlinePoly.ProbGermline.impute_anno`.
 
     Parameters
     ----------
     vcf : cyvcf2.VCF
         Opened VCF object.
-    annotations : list of str, optional
-        INFO field IDs to extract. Default is an empty list.
+    annotations : list of str or dict, optional
+        Annotation entries.  Each entry is either a plain INFO field name
+        (string) or a dict ``{"field": name, "transform": "log10"|"sqrt"}``.
+        See :func:`parse_annotation`. Default is an empty list.
 
     Returns
     -------
     numpy.ndarray
-        Annotation matrix of shape (N, len(annotations)), where N is the
-        total number of variants iterated.
+        Float64 annotation matrix of shape (N, len(annotations)), where N is
+        the total number of variants iterated.
     """
+    parsed = [parse_annotation(a) for a in annotations]
     total_anno = []
     for v in tqdm(vcf):
         if v.is_snp and (len(v.ALT) == 1):
-            anno = [v.INFO.get(a, np.nan) for a in annotations]
+            row = [v.INFO.get(field, np.nan) for field, _ in parsed]
         else:
-            anno = [np.nan for a in annotations]
-        total_anno.append(anno)
-    return np.vstack(total_anno)
+            row = [np.nan for _ in parsed]
+        total_anno.append(row)
+    arr = np.vstack(total_anno).astype(np.float64)
+    for col_idx, (_, transform_fn) in enumerate(parsed):
+        if transform_fn is not None:
+            arr[:, col_idx] = transform_fn(arr[:, col_idx])
+    return arr
 
 
 def create_read_matrix(vcf):
