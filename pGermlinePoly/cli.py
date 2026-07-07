@@ -417,6 +417,14 @@ def main(
         for a, lhat in zip(anno_names, lambdas_hat):
             out_vcf.add_to_header(f"##lambda_{a}={lhat}")
         out_vcf.add_to_header(f"##kappa_hat={kappa_hat}")
+        all_nan_cols = getattr(p_germline, "all_nan_cols", set())
+        if all_nan_cols:
+            degenerate_names = [
+                anno_names[c] for c in sorted(all_nan_cols) if c < len(anno_names)
+            ]
+            out_vcf.add_to_header(
+                f"##degenerate_annotations={','.join(degenerate_names)}"
+            )
     out_vcf.add_to_header(f"##pGermlinePoly=run {' '.join(sys.argv[1:])}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()
