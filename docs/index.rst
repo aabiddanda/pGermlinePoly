@@ -1,3 +1,8 @@
+.. image:: _static/pGermlinePoly_logo.png
+   :alt: pGermlinePoly logo
+   :align: center
+   :width: 80%
+
 Welcome to pGermlinePoly's documentation!
 ==========================================
 

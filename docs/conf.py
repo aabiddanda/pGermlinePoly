@@ -9,6 +9,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.mathjax",
     "sphinx_autodoc_typehints",
 ]
 
@@ -43,3 +44,4 @@ autodoc_default_options = {
 
 html_theme = "furo"
 html_static_path = ["_static"]
+html_logo = "_static/pGermlinePoly_logo.png"

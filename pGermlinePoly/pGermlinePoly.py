@@ -57,10 +57,16 @@ class ReadCountUtils:
 
     @property
     def pooled_vaf(self):
-        """Per-site pooled alt allele frequency, shape (M,).
+        r"""Per-site pooled alt allele frequency, shape (M,).
 
-        Computed as alt_reads.sum(clones) / total_reads.sum(clones).
-        Sites with zero total depth receive a frequency of 0.
+        .. math::
+
+           \hat{p}_k = \frac{\sum_{j=1}^{J} a_{kj}}
+                            {\max\!\left(\sum_{j=1}^{J} n_{kj},\, 1\right)}
+
+        where :math:`a_{kj}` and :math:`n_{kj}` are the alt and total read
+        counts for clone j at site k.  Sites with zero total depth receive a
+        frequency of 0.
         """
         alt = self.X[:, :, 1].sum(axis=1).astype(np.float64)
         tot = self.X.sum(axis=(1, 2)).clip(min=1).astype(np.float64)
@@ -81,11 +87,24 @@ class ReadCountUtils:
 
 
 class ProbGermline(ReadCountUtils):
-    """Compute the posterior probability of germline polymorphism from clonal sequencing data.
+    r"""Compute the posterior probability of germline polymorphism from clonal sequencing data.
 
     Implements an EM algorithm that jointly estimates logistic annotation
-    weights (lambda, beta) and a Beta-Binomial error concentration (kappa)
-    to discriminate germline heterozygotes from somatic variants.
+    weights (:math:`\boldsymbol{\lambda}`, :math:`\boldsymbol{\beta}`) and a
+    Beta-Binomial error concentration (:math:`\kappa`) to discriminate germline
+    heterozygotes from somatic variants.
+
+    The log-posterior for site k is:
+
+    .. math::
+
+       \log P(z_k = \text{het} \mid \mathbf{X}_k) \propto
+           \log \sigma\!\left(\boldsymbol{\theta}_k^\top \boldsymbol{\lambda}\right)
+           + \sum_{j=1}^{J} \log p_{\mathrm{BB}}\!\left(a_{kj} \mid n_{kj},\, \kappa\right)
+
+    where :math:`\sigma` is the logistic function and
+    :math:`p_{\mathrm{BB}}` is the Beta-Binomial PMF with mean
+    :math:`\varepsilon` (sequencing error) under the somatic hypothesis.
 
     Parameters
     ----------
@@ -105,24 +124,6 @@ class ProbGermline(ReadCountUtils):
     mu : float, optional
         Fixed mean sequencing error rate used in the Beta-Binomial model.
         Default is 1e-3.
-
-    Attributes
-    ----------
-    M : int
-        Number of sites.
-    J : int
-        Number of clones.
-    L : int
-        Number of site-level annotations.
-    B : int
-        Number of clone-level annotations (0 if Phi is None).
-    kappa : float
-        Current (or estimated) concentration parameter.
-    mu : float
-        Fixed mean sequencing error rate.
-    vaf : numpy.ndarray or None
-        Per-site MLE variant allele frequencies, shape (M,). Set by
-        :meth:`mle_vaf`.
     """
 
     def __init__(self, X, Theta, Phi=None, kappa=100.0, mu=1e-3):
@@ -281,11 +282,16 @@ class ProbGermline(ReadCountUtils):
         self.logl_vaf = logll_p
 
     def loglik_ratio_het(self, **kwargs):
-        """Compute the likelihood ratio statistic for each site.
+        r"""Compute the likelihood ratio statistic for each site.
 
-        Returns 2*(LL_somatic - LL_het). Under the null hypothesis that the
-        site is a germline heterozygote this is asymptotically chi-squared
-        with 1 degree of freedom.
+        .. math::
+
+           \Lambda_k = 2\bigl[\ell(\hat{p}_k) - \ell(0.5)\bigr]
+           \;\overset{H_0}{\sim}\; \chi^2_1
+
+        Under the null hypothesis that the site is a germline heterozygote
+        (:math:`H_0 : p = 0.5`), :math:`\Lambda_k` is asymptotically
+        chi-squared with 1 degree of freedom.
 
         Parameters
         ----------
@@ -357,10 +363,13 @@ class ProbGermline(ReadCountUtils):
         return np.ascontiguousarray(logit, dtype=np.float64)
 
     def prior_poly(self, lambdas=np.array([0.0, 0.0], dtype="double")):
-        """Compute the log prior probability of germline heterozygosity.
+        r"""Compute the log prior probability of germline heterozygosity.
 
-        Evaluates log sigma(Theta @ lambdas) for all M sites under the
-        logistic model.
+        Evaluates the logistic prior for all M sites:
+
+        .. math::
+
+           \log \pi_k = \log \sigma\!\left(\boldsymbol{\theta}_k^\top \boldsymbol{\lambda}\right)
 
         Parameters
         ----------
@@ -384,10 +393,11 @@ class ProbGermline(ReadCountUtils):
         kappa=None,
         **kwargs,
     ):
-        """Compute the log posterior probability of germline heterozygosity for all sites.
+        r"""Compute the log posterior probability of germline heterozygosity for all sites.
 
-        Evaluates log P(z_k = het | A_k, R_k) for each of the M sites
-        using the current or supplied model parameters.
+        Evaluates :math:`\log P(z_k = \text{het} \mid \mathbf{X}_k)` for each
+        of the M sites by combining the logistic prior with the Beta-Binomial
+        likelihood ratio via Bayes' theorem.
 
         Parameters
         ----------
@@ -427,11 +437,18 @@ class ProbGermline(ReadCountUtils):
         return post_k
 
     def est_vaf_CI(self, alpha=0.05, df=1, **kwargs):
-        """Estimate per-site profile-likelihood confidence intervals for the VAF.
+        r"""Estimate per-site profile-likelihood confidence intervals for the VAF.
 
         Uses the Wilks approximation: the CI is the set of VAF values p for
-        which 2*(LL_mle - LL_p) < chi2(1-alpha, df). Bounds are found via
-        ``scipy.optimize.brentq``.
+        which the likelihood ratio falls within the chi-squared threshold:
+
+        .. math::
+
+           \widehat{\mathrm{CI}}_{1-\alpha} = \bigl\{p \in [0,1] :
+               2\bigl[\ell(\hat{p}_k) - \ell(p)\bigr]
+               \leq \chi^2_{1-\alpha,\,\mathrm{df}}\bigr\}
+
+        Bounds are found via ``scipy.optimize.brentq``.
 
         Parameters
         ----------
@@ -482,7 +499,7 @@ class ProbGermline(ReadCountUtils):
         allele_freq=None,
         p_hom_alt=0.5,
     ):
-        """Compute per-site log-posterior probabilities over germline genotypes {0/0, 0/1, 1/1}.
+        r"""Compute per-site log-posterior probabilities over germline genotypes {0/0, 0/1, 1/1}.
 
         Evaluates the joint binomial log-likelihood of clone read counts under
         each diploid genotype at the phylogenetic root, combined with a genotype
@@ -527,15 +544,22 @@ class ProbGermline(ReadCountUtils):
         Notes
         -----
         The per-clone binomial log-likelihoods for genotype G at site k,
-        summed across J clones (combinatorial coefficient omitted)::
+        summed across J clones (combinatorial coefficient omitted):
 
-            log P(X_k | G=0/0) = sum_j  a_j log(eps) + r_j log(1 - eps)
-            log P(X_k | G=0/1) = sum_j  n_j log(0.5)
-            log P(X_k | G=1/1) = sum_j  a_j log(1 - eps) + r_j log(eps)
+        .. math::
 
-        where eps = ``self.mu``, a_j and r_j are the alt and ref read counts
-        for clone j, and n_j = a_j + r_j.  Clones with zero coverage
-        contribute zero to the sum and therefore carry no information.
+           \begin{aligned}
+           \log P(\mathbf{X}_k \mid G = 0/0) &=
+               \sum_j \bigl[a_j \log \varepsilon + r_j \log(1-\varepsilon)\bigr] \\
+           \log P(\mathbf{X}_k \mid G = 0/1) &= \sum_j n_j \log 0.5 \\
+           \log P(\mathbf{X}_k \mid G = 1/1) &=
+               \sum_j \bigl[a_j \log(1-\varepsilon) + r_j \log \varepsilon\bigr]
+           \end{aligned}
+
+        where :math:`\varepsilon` = ``self.mu``, :math:`a_j` and :math:`r_j`
+        are the alt and ref read counts for clone j, and
+        :math:`n_j = a_j + r_j`.  Clones with zero coverage contribute zero
+        to the sum and therefore carry no information.
         """
         if lambdas is None:
             lambdas = np.zeros(self.L)
@@ -594,10 +618,15 @@ class ProbGermline(ReadCountUtils):
         kappa=None,
         **kwargs,
     ):
-        """Compute the observed data log-likelihood summed over all M sites.
+        r"""Compute the observed data log-likelihood summed over all M sites.
 
-        Evaluates sum_k log P(A_k, R_k) by marginalizing the latent class
-        over each site.
+        Marginalises the latent germline indicator :math:`z_k` over each site:
+
+        .. math::
+
+           \mathcal{L}(\boldsymbol{\lambda}, \boldsymbol{\beta}, \kappa) =
+               \sum_{k=1}^{M} \log P\!\left(A_k, R_k \mid
+               \boldsymbol{\lambda}, \boldsymbol{\beta}, \kappa\right)
 
         Parameters
         ----------
@@ -693,10 +722,23 @@ class ProbGermline(ReadCountUtils):
         return eta, gammas
 
     def m_step_lambda_beta(self, eta, gammas, lambdas0, betas0, algo="L-BFGS-B"):
-        """Run the M-step to update annotation weights via weighted logistic regression.
+        r"""Run the M-step to update annotation weights via weighted logistic regression.
 
-        Minimises the negative Q function with respect to (lambda, beta) using
-        ``scipy.optimize.minimize``.
+        Maximises the EM lower bound Q with respect to
+        (:math:`\boldsymbol{\lambda}`, :math:`\boldsymbol{\beta}`):
+
+        .. math::
+
+           Q(\boldsymbol{\lambda}, \boldsymbol{\beta}) =
+               \sum_k \bigl[\eta_k \log \sigma(\pi_k)
+                   + (1-\eta_k)\log(1-\sigma(\pi_k))\bigr]
+               + \sum_{k,j} \bigl[\gamma_{kj} \log \sigma(\phi_{kj})
+                   + (1-\gamma_{kj})\log(1-\sigma(\phi_{kj}))\bigr]
+
+        where :math:`\pi_k = \boldsymbol{\theta}_k^\top \boldsymbol{\lambda}`
+        and :math:`\phi_{kj} = \boldsymbol{\theta}_k^\top \boldsymbol{\lambda}
+        + \boldsymbol{\phi}_{kj}^\top \boldsymbol{\beta}`.
+        Implemented by minimising :math:`-Q` via ``scipy.optimize.minimize``.
 
         Parameters
         ----------
@@ -925,19 +967,6 @@ class MutectLOD(ReadCountUtils):
     X : numpy.ndarray
         Read-count array of shape (M, J, 2). Only biallelic variants are
         supported (``X.shape[2]`` must equal 2).
-
-    Attributes
-    ----------
-    M : int
-        Number of sites.
-    J : int
-        Number of clones.
-    lod : numpy.ndarray or None
-        Per-site log-likelihood matrix of shape (M, 3), populated by
-        :meth:`lod_scores`.
-    lod_germline : numpy.ndarray or None
-        Per-site germline LOD scores of shape (M,), populated by
-        :meth:`lod_germline`.
     """
 
     def __init__(self, X):
@@ -947,13 +976,15 @@ class MutectLOD(ReadCountUtils):
         self.lod = None
 
     def lod_scores(self, q=30.0):
-        """Compute per-site log-likelihoods under three VAF hypotheses.
+        r"""Compute per-site log-likelihoods under three VAF hypotheses.
 
-        Populates ``self.lod`` with shape (M, 3):
+        Populates ``self.lod`` with shape (M, 3), where each column is
+        :math:`\ell(p) = \sum_j \bigl[a_j \log p_\varepsilon + r_j \log(1-p_\varepsilon)\bigr]`
+        evaluated at:
 
-        - column 0: log-likelihood under VAF = 0 (no mutation)
-        - column 1: log-likelihood under the MLE VAF
-        - column 2: log-likelihood under VAF = 0.5 (germline heterozygote)
+        - column 0: :math:`p = 0` (no mutation)
+        - column 1: :math:`p = \hat{p}` (MLE VAF)
+        - column 2: :math:`p = 0.5` (germline heterozygote)
 
         Parameters
         ----------
@@ -997,11 +1028,16 @@ class MutectLOD(ReadCountUtils):
         raise NotImplementedError("Setting binary priors is not currently implemented")
 
     def lod_germline(self, p_somatic=3e-6, p_germline=0.095):
-        """Compute the per-site LOD score for germline origin.
+        r"""Compute the per-site LOD score for germline origin.
 
-        LOD_germline = (LL_mle + log p_somatic) - (LL_het + log p_germline),
-        converted to base-10 log-odds. A positive LOD score favours somatic
-        origin; a negative value favours germline origin.
+        .. math::
+
+           \text{LOD}_\text{germ} = \frac{1}{\ln 10}
+               \Bigl[\bigl(\ell(\hat{p}) + \ln p_\text{somatic}\bigr)
+               - \bigl(\ell(0.5) + \ln p_\text{germline}\bigr)\Bigr]
+
+        A positive score favours somatic origin; a negative value favours
+        germline origin.
 
         Requires :meth:`lod_scores` to have been called first. Result is
         stored in ``self.lod_germline``, shape (M,).
@@ -1028,11 +1064,35 @@ class MutectLOD(ReadCountUtils):
 
 
 class BetaOverdispersion(ReadCountUtils):
-    """Estimate per-site overdispersion under the Beta-Binomial model.
+    r"""Estimate per-site overdispersion under the Beta-Binomial model.
 
     Implements the overdispersion test from Spencer-Chapman et al. by fitting
     the rho parameter of a Beta-Binomial distribution to the observed allele
     counts across clones.
+
+    The Beta-Binomial model places a Beta mixing distribution on the clone-level
+    VAF :math:`p_{kj}`.  At each site k, the J clone read counts are drawn as:
+
+    .. math::
+
+       \begin{aligned}
+       a_{kj} \mid p_{kj} &\sim \mathrm{Binomial}(n_{kj},\, p_{kj}) \\
+       p_{kj} &\sim \mathrm{Beta}(\alpha_k,\, \beta_k)
+       \end{aligned}
+
+    where :math:`\alpha_k` and :math:`\beta_k` are reparameterised in terms of
+    the pooled MLE VAF :math:`\hat{p}_k` and an overdispersion scalar
+    :math:`\rho_k \in (0, 1)`:
+
+    .. math::
+
+       \alpha_k = \frac{\hat{p}_k\,(1 - \rho_k)}{\rho_k}, \qquad
+       \beta_k  = \frac{(1 - \hat{p}_k)\,(1 - \rho_k)}{\rho_k}
+
+    Under this parameterisation :math:`\mathbb{E}[p_{kj}] = \hat{p}_k` and
+    :math:`\mathrm{Var}[p_{kj}] = \hat{p}_k(1-\hat{p}_k)\rho_k`, so
+    :math:`\rho_k \to 0` recovers the Binomial limit and large :math:`\rho_k`
+    indicates strong overdispersion (somatic or sub-clonal signal).
 
     Parameters
     ----------
@@ -1046,16 +1106,26 @@ class BetaOverdispersion(ReadCountUtils):
         self.M, self.J, _ = self.X.shape
 
     def estimate_rhos(self):
-        """Estimate the per-site overdispersion parameter rho.
+        r"""Estimate the per-site overdispersion parameter rho.
 
-        For each site, maximises the Beta-Binomial log-likelihood over rho in
-        (0, 1) via ``scipy.optimize.minimize_scalar``, where the Beta
-        parameters are alpha = phat*(1-rho)/rho and beta = (1-phat)*(1-rho)/rho.
+        For each site k, :math:`\hat{p}_k` is computed from pooled read counts
+        and then :math:`\rho_k` is found by maximising the marginalised
+        Beta-Binomial log-likelihood:
+
+        .. math::
+
+           \hat{\rho}_k = \operatorname*{arg\,max}_{\rho \in (0,1)}
+               \sum_{j=1}^{J} \log p_{\mathrm{BB}}\!\left(a_{kj} \mid n_{kj},\,
+               \frac{\hat{p}_k(1-\rho)}{\rho},\,
+               \frac{(1-\hat{p}_k)(1-\rho)}{\rho}\right)
+
+        where :math:`p_{\mathrm{BB}}` is the Beta-Binomial PMF.  Optimisation
+        is performed via ``scipy.optimize.minimize_scalar`` on :math:`(0, 1)`.
 
         Returns
         -------
         numpy.ndarray
-            Per-site MLE overdispersion values, shape (M,).
+            Per-site MLE overdispersion values :math:`\hat{\rho}`, shape (M,).
         """
         m = self.X.shape[0]
         rhos = np.zeros(m)
@@ -1115,11 +1185,20 @@ class ClonalSim:
         q=30,
         seed=42,
     ):
-        """Simulate germline heterozygotes and de-novo mutations for the germline sample.
+        r"""Simulate germline heterozygotes and de-novo mutations for the germline sample.
 
-        Draws the number of heterozygous sites from a Poisson distribution,
-        samples allele frequencies from a Beta distribution parameterised by
-        ``afs``, and simulates read counts under a Normal coverage model.
+        The number of heterozygous sites and population allele frequencies are
+        drawn from:
+
+        .. math::
+
+           K \sim \mathrm{Poisson}(L \cdot \theta_\text{het}),
+           \quad p_k \sim \mathrm{Beta}(1 + a,\, 1 + b)
+
+        where :math:`L` is the genome length, :math:`\theta_\text{het}` is
+        the heterozygosity rate, and :math:`(a, b)` are the Beta shape
+        parameters from ``afs``.  Read counts are then drawn under a Normal
+        coverage model with Binomial sampling at :math:`p = 0.5`.
         Populates ``self.germline_muts``, ``self.germline_af``,
         ``self.germline_alt_reads``, ``self.germline_tot_reads``, and
         ``self.germline_pl``.
@@ -1225,12 +1304,22 @@ class ClonalSim:
     def sim_somatic_mutations(
         self, age=45, mut_rate=5e-9, mean_coverage=15.0, sd_coverage=5.0, q=30, seed=42
     ):
-        """Simulate somatic mutations on branches of the clonal genealogy.
+        r"""Simulate somatic mutations on branches of the clonal genealogy.
 
-        Traverses each branch of ``self.genealogy``, draws the number of
-        mutations from a Poisson distribution scaled by the branch length, age,
-        genome size, and mutation rate, then assigns read counts to the leaf
-        clones that descend from the mutated branch. Populates
+        For each branch e with length :math:`\ell_e`, the number of mutations
+        is drawn as:
+
+        .. math::
+
+           N_e \sim \mathrm{Poisson}\!\left(
+               \ell_e \cdot \frac{\text{age}}{h} \cdot L \cdot \mu_\text{som}
+           \right)
+
+        where :math:`h` is the tree height (used to rescale coalescent branch
+        lengths to years), :math:`L` is the genome length, and
+        :math:`\mu_\text{som}` is the per-base-pair per-year somatic mutation
+        rate.  Traverses each branch of ``self.genealogy`` and assigns read
+        counts to all leaf clones that descend from the mutated branch. Populates
         ``self.somatic_muts``, ``self.somatic_alt_reads``,
         ``self.somatic_tot_reads``, and ``self.somatic_mut_pl``.
 

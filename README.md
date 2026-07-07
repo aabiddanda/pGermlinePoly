@@ -5,6 +5,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+<p align="center">
+  <img src="docs/_static/pGermlinePoly_logo.png" alt="pGermlinePoly logo" width="70%">
+</p>
+
 # pGermlinePoly
 
 `pGermlinePoly` is a Bayesian model to estimate the posterior probability of germline polymorphism in somatic sequencing data.
