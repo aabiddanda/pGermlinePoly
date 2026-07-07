@@ -67,7 +67,10 @@ The configuration yaml file for running `pGermlinePoly` has the following fields
 - `ind`: the overall identifier for the individual (not used for inference)
 - `sex`: the sex of the individual (not used for inference)
 - `age`: the age of the individual (not used for inference)
-- `annotations`: the INFO field annotations used when constructing the EM-algorithm for weights.
+- `annotations`: the INFO field annotations used when constructing the EM-algorithm for weights. Each entry is either a plain string (INFO field name) or a dict with the following keys:
+  - `field` *(required)*: the INFO field name to extract from the VCF.
+  - `transform` *(optional)*: element-wise transform applied after extraction. Supported values: `"log10"`, `"sqrt"`.
+  - `is_af` *(optional, boolean)*: set to `true` if this annotation is a population allele frequency (AF). AF annotations are automatically reflected (AF → 1−AF) for sites where the allele is reoriented to the minor allele, so the annotation continues to describe the minor allele.
 - `clones`: the list of clone sample IDs — must match sample names in the clone VCF.
 - `germline` *(optional)*: the germline sample IDs. If present, a separate germline VCF must be provided via `--germline_vcf`.
 
@@ -78,7 +81,9 @@ ind: IndA
 sex: M
 age: 50.0
 annotations:
-  - ExternalAF
+  - field: ExternalAF
+    transform: log10
+    is_af: true
   - DP
 clones:
   - Aclone0

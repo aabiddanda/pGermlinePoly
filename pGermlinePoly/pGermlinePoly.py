@@ -165,6 +165,72 @@ class ProbGermline(ReadCountUtils):
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
+    def reflect_af_annotations(self, col_indices, transform_names=None):
+        """Reflect allele-frequency annotation columns for reoriented sites.
+
+        For each site that was flipped by :meth:`reorient_to_minor_allele`,
+        the annotation value is mapped AF → 1−AF so that it continues to
+        describe the *minor* allele rather than the original ALT allele.
+        Reflection is performed in the raw (pre-transform) space: the current
+        value is inverted back to a raw AF, reflected, and the transform
+        re-applied.  Sites with NaN annotation values are left untouched so
+        that :meth:`impute_anno` can handle them after reflection.
+
+        Must be called after :meth:`reorient_to_minor_allele` (which sets
+        ``self.flipped``) and before :meth:`impute_anno`.
+
+        Parameters
+        ----------
+        col_indices : list of int
+            Column indices into ``self.Theta`` to reflect.
+        transform_names : list of str or None, optional
+            Transform name applied to each column — ``"log10"``, ``"sqrt"``,
+            or ``None`` for raw (untransformed) AF values in [0, 1].  Must be
+            the same length as ``col_indices``.  Default is all None.
+
+        Raises
+        ------
+        RuntimeError
+            If called before :meth:`reorient_to_minor_allele`.
+        AssertionError
+            If ``transform_names`` is provided but its length does not match
+            ``col_indices``.
+        """
+        if not hasattr(self, "flipped"):
+            raise RuntimeError(
+                "reflect_af_annotations() requires self.flipped — "
+                "call reorient_to_minor_allele() first."
+            )
+        if transform_names is None:
+            transform_names = [None] * len(col_indices)
+        assert len(transform_names) == len(col_indices), (
+            f"transform_names length ({len(transform_names)}) must match "
+            f"col_indices length ({len(col_indices)})"
+        )
+        for col, tname in zip(col_indices, transform_names):
+            # Only reflect sites that were flipped AND have a finite annotation value.
+            valid = self.flipped & np.isfinite(self.Theta[:, col])
+            if not valid.any():
+                continue
+            vals = self.Theta[valid, col]
+            # Invert transform → raw AF in [0, 1]
+            if tname == "log10":
+                raw_af = np.power(10.0, vals)
+            elif tname == "sqrt":
+                raw_af = vals ** 2
+            else:
+                raw_af = vals
+            # Reflect: minor allele frequency of original ALT = 1 - AF
+            reflected_raw = np.clip(1.0 - raw_af, 0.0, 1.0)
+            # Re-apply transform
+            if tname == "log10":
+                reflected = np.log10(np.maximum(reflected_raw, 1e-10))
+            elif tname == "sqrt":
+                reflected = np.sqrt(reflected_raw)
+            else:
+                reflected = reflected_raw
+            self.Theta[valid, col] = reflected
+
     def mle_vaf(self, naive=True, eps=1e-3, **kwargs):
         """Estimate the per-site MLE variant allele frequency from pooled clone reads.
 

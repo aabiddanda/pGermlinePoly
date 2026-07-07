@@ -64,10 +64,26 @@ def sim_vcf_paths(tmp_path_factory):
         )
     )
 
+    cfg_af_fp = d / "config_af.yaml"
+    cfg_af_fp.write_text(
+        yaml.dump(
+            {
+                "ind": "IndA",
+                "age": 50,
+                "sex": "M",
+                "clones": [f"Aclone{i}" for i in range(5)],
+                "annotations": [
+                    {"field": "ExternalAF", "transform": "log10", "is_af": True}
+                ],
+            }
+        )
+    )
+
     return types.SimpleNamespace(
         vcf_fp=vcf_fp,
         cfg_fp=cfg_fp,
         cfg_germline_fp=cfg_germline_fp,
+        cfg_af_fp=cfg_af_fp,
     )
 
 
@@ -611,7 +627,9 @@ def sim_vcf_missing_anno_paths(tmp_path_factory, sim_vcf_paths):
         else:
             if data_idx % 2 == 1:
                 cols = line.split("\t")
-                info_parts = [p for p in cols[7].split(";") if not p.startswith("ExternalAF=")]
+                info_parts = [
+                    p for p in cols[7].split(";") if not p.startswith("ExternalAF=")
+                ]
                 cols[7] = ";".join(info_parts) or "."
                 line = "\t".join(cols)
             out.append(line)
@@ -661,7 +679,13 @@ def test_cli_all_flags_missing_annotations(sim_vcf_missing_anno_paths, tmp_path)
     )
     assert result.exit_code == 0, result.output
     content = out_fp.read_text()
-    for field in ("ppGermlinePoly", "lrtGermlinePoly", "lodMutect", "rhobeta", "ppGermlineGeno"):
+    for field in (
+        "ppGermlinePoly",
+        "lrtGermlinePoly",
+        "lodMutect",
+        "rhobeta",
+        "ppGermlineGeno",
+    ):
         assert field in content, f"Expected INFO field '{field}' missing from output"
 
 
@@ -675,17 +699,20 @@ def test_cli_reorient_default_adds_info_field(sim_vcf_paths, tmp_path):
     out_fp = tmp_path / "out.vcf"
     result = _run(
         [
-            "--vcf", sim_vcf_paths.vcf_fp,
-            "--config", sim_vcf_paths.cfg_fp,
+            "--vcf",
+            sim_vcf_paths.vcf_fp,
+            "--config",
+            sim_vcf_paths.cfg_fp,
             "--em",
-            "-o", out_fp,
+            "-o",
+            out_fp,
         ]
     )
     assert result.exit_code == 0, result.output
     content = out_fp.read_text()
     assert "minorAlleleFlipped" in content
-    data_lines = [l for l in content.splitlines() if not l.startswith("#")]
-    assert any("minorAlleleFlipped=" in l for l in data_lines)
+    data_lines = [line for line in content.splitlines() if not line.startswith("#")]
+    assert any("minorAlleleFlipped=" in line for line in data_lines)
 
 
 def test_cli_no_reorient_omits_info_field(sim_vcf_paths, tmp_path):
@@ -693,11 +720,14 @@ def test_cli_no_reorient_omits_info_field(sim_vcf_paths, tmp_path):
     out_fp = tmp_path / "out.vcf"
     result = _run(
         [
-            "--vcf", sim_vcf_paths.vcf_fp,
-            "--config", sim_vcf_paths.cfg_fp,
+            "--vcf",
+            sim_vcf_paths.vcf_fp,
+            "--config",
+            sim_vcf_paths.cfg_fp,
             "--em",
             "--no-reorient",
-            "-o", out_fp,
+            "-o",
+            out_fp,
         ]
     )
     assert result.exit_code == 0, result.output
@@ -709,10 +739,13 @@ def test_cli_reorient_mlevaf_always_in_range(sim_vcf_paths, tmp_path):
     out_fp = tmp_path / "out.vcf"
     result = _run(
         [
-            "--vcf", sim_vcf_paths.vcf_fp,
-            "--config", sim_vcf_paths.cfg_fp,
+            "--vcf",
+            sim_vcf_paths.vcf_fp,
+            "--config",
+            sim_vcf_paths.cfg_fp,
             "--em",
-            "-o", out_fp,
+            "-o",
+            out_fp,
         ]
     )
     assert result.exit_code == 0, result.output
@@ -735,11 +768,35 @@ def test_cli_anno_std(sim_vcf_paths, tmp_path):
     out_fp = tmp_path / "out.vcf"
     result = _run(
         [
-            "--vcf", sim_vcf_paths.vcf_fp,
-            "--config", sim_vcf_paths.cfg_fp,
+            "--vcf",
+            sim_vcf_paths.vcf_fp,
+            "--config",
+            sim_vcf_paths.cfg_fp,
             "--em",
             "--anno-std",
-            "-o", out_fp,
+            "-o",
+            out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "ppGermlinePoly" in content
+    assert "##lambda_intercept=" in content
+    assert "##lambda_ExternalAF=" in content
+
+
+def test_cli_reflect_af_annotations(sim_vcf_paths, tmp_path):
+    """is_af: true triggers AF reflection for reoriented sites without errors."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf",
+            sim_vcf_paths.vcf_fp,
+            "--config",
+            sim_vcf_paths.cfg_af_fp,
+            "--em",
+            "-o",
+            out_fp,
         ]
     )
     assert result.exit_code == 0, result.output

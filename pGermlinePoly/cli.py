@@ -17,6 +17,8 @@ from pGermlinePoly.io import (
     create_anno,
     create_read_matrix,
     parse_annotation,
+    is_af_annotation,
+    annotation_transform_name,
 )
 
 # Setup the logging configuration for the CLI
@@ -242,6 +244,32 @@ def main(
     # Without it, sites with annotation = 0 are locked at logit = 0 (prior = 0.5).
     full_anno = np.hstack([np.ones((full_anno.shape[0], 1)), full_anno])
     p_germline = ProbGermline(X=clone_reads, Theta=full_anno, mu=eps)
+
+    # Reorientation and AF reflection happen before imputation so that NaN
+    # sites (absent from the population reference) are not reflected.
+    if reorient:
+        logging.info("Re-orienting sites to the minor allele...")
+        p_germline.reorient_to_minor_allele()
+        logging.info(
+            f"Flipped {p_germline.flipped.sum()} / {p_germline.M} sites to "
+            "minor-allele orientation."
+        )
+        # Column offset: 1 for intercept, +1 more if a germline annotation is present.
+        config_anno_col_offset = 2 if "germline" in config else 1
+        af_col_indices = []
+        af_transform_names = []
+        for i, a in enumerate(annotations):
+            if is_af_annotation(a):
+                af_col_indices.append(config_anno_col_offset + i)
+                af_transform_names.append(annotation_transform_name(a))
+        if af_col_indices:
+            logging.info(
+                f"Reflecting {len(af_col_indices)} AF annotation column(s) for "
+                "reoriented sites..."
+            )
+            p_germline.reflect_af_annotations(af_col_indices, af_transform_names)
+            logging.info("Finished reflecting AF annotation columns!")
+
     logging.info("Imputing missing annotations...")
     p_germline.impute_anno()
     logging.info("Finished imputing missing annotations!")
@@ -259,13 +287,6 @@ def main(
                     "skipping standardization for this column."
                 )
         logging.info("Finished standardizing annotation columns!")
-    if reorient:
-        logging.info("Re-orienting sites to the minor allele...")
-        p_germline.reorient_to_minor_allele()
-        logging.info(
-            f"Flipped {p_germline.flipped.sum()} / {p_germline.M} sites to "
-            "minor-allele orientation."
-        )
     if em:
         logging.info("Estimating Naive VAF from pooled reads...")
         p_germline.mle_vaf()
@@ -408,7 +429,7 @@ def main(
             lo, mle, hi = ci_mle_p[i, 0], ci_mle_p[i, 1], ci_mle_p[i, 2]
             if reorient and p_germline.flipped[i]:
                 # Minor-allele CI → original ALT allele: invert and swap bounds
-                v.INFO["mleVAF"] = f"{1-hi}:{1-mle}:{1-lo}"
+                v.INFO["mleVAF"] = f"{1 - hi}:{1 - mle}:{1 - lo}"
             else:
                 v.INFO["mleVAF"] = f"{lo}:{mle}:{hi}"
         if lrt:
