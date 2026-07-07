@@ -7,12 +7,26 @@ import yaml
 
 from pGermlinePoly import ClonalSim
 
-# Setup the logging configuration for the CLI
-logging.basicConfig(
-    format="%(asctime)s %(levelname)-8s %(message)s",
-    level=logging.INFO,
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+
+def setup_logging(logfile=None):
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    if logfile:
+        handler = logging.FileHandler(logfile)
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+        )
+        root.addHandler(handler)
+    elif not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+        )
+        root.addHandler(handler)
 
 
 @click.command(
@@ -148,6 +162,13 @@ logging.basicConfig(
     default=None,
     help="Output yaml-based config file for applying inference post-hoc.",
 )
+@click.option(
+    "--logfile",
+    required=False,
+    default=None,
+    type=click.Path(dir_okay=False, writable=True),
+    help="Write log messages to this file instead of stderr.",
+)
 def main(
     seqlen,
     nclones,
@@ -167,8 +188,10 @@ def main(
     out,
     out_tree,
     out_config,
+    logfile,
 ):
     """CLI for calculating probability of germline polymorphism from somatic clonal sequencing data."""
+    setup_logging(logfile)
     logging.info(
         f"Setting up somatic simulation object for {nclones} clones over {seqlen} basepairs"
     )

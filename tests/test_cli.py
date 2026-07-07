@@ -852,6 +852,51 @@ def test_cli_anno_std(sim_vcf_paths, tmp_path):
     assert "##lambda_ExternalAF=" in content
 
 
+def test_cli_logfile_creates_file(sim_vcf_paths, tmp_path):
+    """--logfile creates the file and writes log messages to it."""
+    out_fp = tmp_path / "out.vcf"
+    log_fp = tmp_path / "run.log"
+    result = _run(
+        [
+            "--vcf",
+            sim_vcf_paths.vcf_fp,
+            "--config",
+            sim_vcf_paths.cfg_fp,
+            "--lrt",
+            "-o",
+            out_fp,
+            "--logfile",
+            log_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    assert log_fp.exists()
+    assert log_fp.stat().st_size > 0
+
+
+def test_cli_logfile_contains_expected_messages(sim_vcf_paths, tmp_path):
+    """Log file written by --logfile includes key pipeline stage messages."""
+    out_fp = tmp_path / "out.vcf"
+    log_fp = tmp_path / "run.log"
+    result = _run(
+        [
+            "--vcf",
+            sim_vcf_paths.vcf_fp,
+            "--config",
+            sim_vcf_paths.cfg_fp,
+            "--lrt",
+            "-o",
+            out_fp,
+            "--logfile",
+            log_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    log_text = log_fp.read_text()
+    assert "Checking config structure" in log_text
+    assert "Finished VCF checks" in log_text
+
+
 def test_cli_reflect_af_annotations(sim_vcf_paths, tmp_path):
     """is_af: true triggers AF reflection for reoriented sites without errors."""
     out_fp = tmp_path / "out.vcf"

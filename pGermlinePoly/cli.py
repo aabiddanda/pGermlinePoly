@@ -21,12 +21,26 @@ from pGermlinePoly.io import (
     annotation_transform_name,
 )
 
-# Setup the logging configuration for the CLI
-logging.basicConfig(
-    format="%(asctime)s %(levelname)-8s %(message)s",
-    level=logging.INFO,
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+
+def setup_logging(logfile=None):
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    if logfile:
+        handler = logging.FileHandler(logfile)
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+        )
+        root.addHandler(handler)
+    elif not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+        )
+        root.addHandler(handler)
 
 
 @click.command(
@@ -175,6 +189,13 @@ logging.basicConfig(
         "never standardized."
     ),
 )
+@click.option(
+    "--logfile",
+    required=False,
+    default=None,
+    type=click.Path(dir_okay=False, writable=True),
+    help="Write log messages to this file instead of stderr.",
+)
 def main(
     vcf,
     germline_vcf,
@@ -192,6 +213,7 @@ def main(
     out,
     reorient,
     anno_std,
+    logfile,
 ):
     """Run the pGermlinePoly inference pipeline on an input VCF.
 
@@ -201,6 +223,7 @@ def main(
     output VCF with per-site ``ppGermlinePoly`` and ``mleVAF`` INFO fields.
     Optional flags add ``lrtGermlinePoly``, ``lodMutect``, and ``rhobeta``.
     """
+    setup_logging(logfile)
     if not any([em, lrt, mutect2, betabinomial, geno]):
         raise click.UsageError(
             "At least one of --em, --lrt, --mutect2, or --betabinomial must be specified."
