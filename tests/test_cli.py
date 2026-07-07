@@ -613,6 +613,28 @@ def test_cli_mlevaf_colon_format(sim_vcf_paths, tmp_path):
 
 
 @pytest.fixture(scope="session")
+def sim_vcf_all_nan_anno_paths(tmp_path_factory, sim_vcf_paths):
+    """VCF identical to sim_vcf_paths but with ExternalAF stripped from every record."""
+    d = tmp_path_factory.mktemp("sim_vcf_all_nan")
+    vcf_fp = d / "sim_all_nan_anno.vcf"
+
+    raw = sim_vcf_paths.vcf_fp.read_text().splitlines(keepends=True)
+    out = []
+    for line in raw:
+        if line.startswith("#"):
+            out.append(line)
+        else:
+            cols = line.split("\t")
+            info_parts = [
+                p for p in cols[7].split(";") if not p.startswith("ExternalAF=")
+            ]
+            cols[7] = ";".join(info_parts) or "."
+            out.append("\t".join(cols))
+    vcf_fp.write_text("".join(out))
+    return types.SimpleNamespace(vcf_fp=vcf_fp, cfg_fp=sim_vcf_paths.cfg_fp)
+
+
+@pytest.fixture(scope="session")
 def sim_vcf_missing_anno_paths(tmp_path_factory, sim_vcf_paths):
     """VCF identical to sim_vcf_paths but with ExternalAF stripped from every other record."""
     d = tmp_path_factory.mktemp("sim_vcf_missing")
@@ -687,6 +709,51 @@ def test_cli_all_flags_missing_annotations(sim_vcf_missing_anno_paths, tmp_path)
         "ppGermlineGeno",
     ):
         assert field in content, f"Expected INFO field '{field}' missing from output"
+
+
+# ---------------------------------------------------------------------------
+# all-NaN annotation tests
+# ---------------------------------------------------------------------------
+
+
+def test_cli_em_all_nan_annotation_exits_cleanly(sim_vcf_all_nan_anno_paths, tmp_path):
+    """--em completes without error when an annotation is absent from every record."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf",
+            sim_vcf_all_nan_anno_paths.vcf_fp,
+            "--config",
+            sim_vcf_all_nan_anno_paths.cfg_fp,
+            "--em",
+            "-o",
+            out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    assert "ppGermlinePoly" in out_fp.read_text()
+
+
+def test_cli_em_all_nan_annotation_writes_degenerate_header(
+    sim_vcf_all_nan_anno_paths, tmp_path
+):
+    """##degenerate_annotations header line names the all-NaN annotation column."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        [
+            "--vcf",
+            sim_vcf_all_nan_anno_paths.vcf_fp,
+            "--config",
+            sim_vcf_all_nan_anno_paths.cfg_fp,
+            "--em",
+            "-o",
+            out_fp,
+        ]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "##degenerate_annotations=" in content
+    assert "ExternalAF" in content
 
 
 # ---------------------------------------------------------------------------

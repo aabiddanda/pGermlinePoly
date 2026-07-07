@@ -103,6 +103,103 @@ def test_impute_anno():
     assert prob_germline.Theta[5, 1] == 0
 
 
+def test_impute_anno_no_nan_cols_empty():
+    """all_nan_cols is an empty set when no column is entirely NaN."""
+    X = np.zeros(shape=(10, 3, 2))
+    Theta = np.ones(shape=(10, 2))
+    Theta[0, 0] = np.nan  # partial NaN — should NOT appear in all_nan_cols
+    pg = ProbGermline(X=X, Theta=Theta)
+    pg.impute_anno()
+    assert pg.all_nan_cols == set()
+
+
+def test_impute_anno_all_nan_column_filled_with_zero():
+    """An entirely-NaN column is filled with 0.0 and recorded in all_nan_cols."""
+    X = np.zeros(shape=(10, 3, 2))
+    Theta = np.ones(shape=(10, 2))
+    Theta[:, 1] = np.nan  # column 1 entirely NaN
+    pg = ProbGermline(X=X, Theta=Theta)
+    pg.impute_anno()
+    assert 1 in pg.all_nan_cols
+    assert np.all(pg.Theta[:, 1] == 0.0)
+    assert np.all(pg.Theta[:, 0] == 1.0)  # column 0 untouched
+
+
+def test_impute_anno_all_nan_column_emits_warning(caplog):
+    """impute_anno logs a warning for each entirely-NaN column."""
+    import logging
+
+    X = np.zeros(shape=(5, 2, 2))
+    Theta = np.array([[1.0, np.nan]] * 5)
+    pg = ProbGermline(X=X, Theta=Theta)
+    with caplog.at_level(logging.WARNING):
+        pg.impute_anno()
+    assert any("entirely NaN" in r.message for r in caplog.records)
+
+
+def test_impute_anno_mixed_partial_and_all_nan():
+    """Partial-NaN column is imputed to its mean; all-NaN column goes to 0.0."""
+    X = np.zeros(shape=(6, 2, 2))
+    Theta = np.array(
+        [
+            [2.0, np.nan],
+            [4.0, np.nan],
+            [np.nan, np.nan],
+            [2.0, np.nan],
+            [4.0, np.nan],
+            [np.nan, np.nan],
+        ],
+        dtype=float,
+    )
+    pg = ProbGermline(X=X, Theta=Theta)
+    pg.impute_anno()
+    # Column 0: partial NaN → imputed to mean of [2, 4, 2, 4] = 3.0
+    assert pg.Theta[2, 0] == pytest.approx(3.0)
+    assert pg.Theta[5, 0] == pytest.approx(3.0)
+    assert 0 not in pg.all_nan_cols
+    # Column 1: all NaN → filled with 0.0
+    assert np.all(pg.Theta[:, 1] == 0.0)
+    assert 1 in pg.all_nan_cols
+
+
+def test_m_step_lambda_beta_is_public():
+    """m_step_lambda_beta is accessible without a leading underscore."""
+    X, _, _ = sim_read_counts(m=20, j=5, coverage=15, seed=7)
+    A = np.hstack([np.ones((20, 1)), sim_annotations(m=20, a=1, seed=7)])
+    pg = ProbGermline(X=X, Theta=A)
+    pg.impute_anno()
+    pg.mle_vaf()
+    eta = np.full(20, 0.5)
+    gammas = np.full((20, 5), 0.5)
+    lam0 = np.zeros(A.shape[1])
+    bet0 = np.zeros(0)
+    lam, bet = pg.m_step_lambda_beta(eta, gammas, lam0, bet0)
+    assert lam.shape == (A.shape[1],)
+    assert bet.shape == (0,)
+
+
+def test_em_algo_all_nan_annotation_nonzero_intercept():
+    """EM produces a non-zero intercept even when one annotation column is all-NaN.
+
+    Regression test for the silent lambda=0 bug: an all-NaN annotation (e.g.
+    a gnomAD field absent from the VCF) previously caused NaN propagation in
+    neg_Q, making the optimizer abort and leave all weights at their initial
+    value of zero.
+    """
+    X, _, _ = sim_read_counts(m=80, j=8, coverage=20, p_somatic=0.7, seed=42)
+    # Column 0: intercept; column 1: valid annotation; column 2: all-NaN
+    valid_anno = sim_annotations(m=80, a=1, seed=42)
+    all_nan_anno = np.full((80, 1), np.nan)
+    Theta = np.hstack([np.ones((80, 1)), valid_anno, all_nan_anno])
+    pg = ProbGermline(X=X, Theta=Theta)
+    pg.impute_anno()
+    assert 2 in pg.all_nan_cols  # all-NaN column detected
+    pg.mle_vaf()
+    _, lambdas, _, _ = pg.em_algo(max_iter=10)
+    # Intercept must move away from zero — if the fix regressed, this fails
+    assert lambdas[0] != 0.0, "intercept lambda stayed at zero (all-NaN bug regressed)"
+
+
 @pytest.mark.parametrize("m", [10, 50, 100])
 @pytest.mark.parametrize("j", [5, 50, 100])
 @pytest.mark.parametrize("c", [5, 10, 30])
