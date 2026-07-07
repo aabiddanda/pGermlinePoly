@@ -270,6 +270,15 @@ def main(
 
     # Reorientation and AF reflection happen before imputation so that NaN
     # sites (absent from the population reference) are not reflected.
+    # Column offset: 1 for intercept, +1 more if a germline annotation is present.
+    config_anno_col_offset = 2 if "germline" in config else 1
+    af_col_indices = []
+    af_transform_names = []
+    for i, a in enumerate(annotations):
+        if is_af_annotation(a):
+            af_col_indices.append(config_anno_col_offset + i)
+            af_transform_names.append(annotation_transform_name(a))
+
     if reorient:
         logging.info("Re-orienting sites to the minor allele...")
         p_germline.reorient_to_minor_allele()
@@ -277,14 +286,6 @@ def main(
             f"Flipped {p_germline.flipped.sum()} / {p_germline.M} sites to "
             "minor-allele orientation."
         )
-        # Column offset: 1 for intercept, +1 more if a germline annotation is present.
-        config_anno_col_offset = 2 if "germline" in config else 1
-        af_col_indices = []
-        af_transform_names = []
-        for i, a in enumerate(annotations):
-            if is_af_annotation(a):
-                af_col_indices.append(config_anno_col_offset + i)
-                af_transform_names.append(annotation_transform_name(a))
         if af_col_indices:
             logging.info(
                 f"Reflecting {len(af_col_indices)} AF annotation column(s) for "
@@ -293,8 +294,31 @@ def main(
             p_germline.reflect_af_annotations(af_col_indices, af_transform_names)
             logging.info("Finished reflecting AF annotation columns!")
 
+    # For AF annotations, impute missing sites (absent from the population
+    # reference) with a floor value well below the rarest observed entry rather
+    # than the column mean.  Sites not in gnomAD are rare/novel and should
+    # receive a low-AF prior, not the average AF of sites that are present.
+    af_col_fill_values = {}
+    for col, tname in zip(af_col_indices, af_transform_names):
+        col_vals = p_germline.Theta[:, col]
+        if tname == "log10":
+            # Two log10-units below the rarest in-DB site (e.g. -7 if min is -5)
+            floor = float(np.nanmin(col_vals)) - 2.0
+        else:
+            # Raw or sqrt-transformed AF: absent = 0 frequency
+            floor = 0.0
+        af_col_fill_values[col] = floor
+        logging.info(
+            "AF annotation column %d (transform=%s): imputing %d missing sites "
+            "with floor value %.4f instead of column mean.",
+            col,
+            tname,
+            int(np.isnan(col_vals).sum()),
+            floor,
+        )
+
     logging.info("Imputing missing annotations...")
-    p_germline.impute_anno()
+    p_germline.impute_anno(col_fill_values=af_col_fill_values if af_col_fill_values else None)
     logging.info("Finished imputing missing annotations!")
     if anno_std:
         logging.info("Standardizing annotation columns (post-imputation)...")

@@ -155,7 +155,7 @@ class ProbGermline(ReadCountUtils):
         """Return a brief string representation of the object."""
         return f"pGermlineObj ({self.M} sites {self.J} clones {self.A} annotations)"
 
-    def impute_anno(self):
+    def impute_anno(self, col_fill_values=None):
         """Impute missing annotation values using column-wise means.
 
         Replaces NaN entries in ``self.Theta`` in-place with the mean of the
@@ -163,6 +163,15 @@ class ProbGermline(ReadCountUtils):
         Columns that are entirely NaN (no observed values) are filled with 0.0
         and a warning is emitted; such columns carry no information and will be
         assigned zero weight by the optimizer.
+
+        Parameters
+        ----------
+        col_fill_values : dict of {int: float}, optional
+            Per-column fill values that override the column-wise mean for
+            specific columns.  Keys are column indices into ``self.Theta``.
+            Use this for allele-frequency annotations where missing entries
+            should be treated as very rare (e.g. absent from gnomAD) rather
+            than as average-frequency variants.
         """
         assert self.Theta is not None
         col_means = np.nanmean(self.Theta, axis=0)
@@ -176,6 +185,9 @@ class ProbGermline(ReadCountUtils):
                 c,
             )
             col_means[c] = 0.0
+        if col_fill_values:
+            for col, val in col_fill_values.items():
+                col_means[col] = val
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
