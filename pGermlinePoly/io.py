@@ -79,6 +79,7 @@ def is_af_annotation(entry):
     Returns
     -------
     bool
+        True if ``entry`` is a dict with ``is_af: true``, False otherwise.
     """
     if isinstance(entry, str):
         return False
@@ -88,6 +89,9 @@ def is_af_annotation(entry):
 def annotation_transform_name(entry):
     """Return the transform name string for an annotation entry, or None.
 
+    Useful when the transform name (rather than the callable) is needed —
+    for example to invert a transform before reflecting an allele frequency.
+
     Parameters
     ----------
     entry : str or dict
@@ -96,6 +100,8 @@ def annotation_transform_name(entry):
     Returns
     -------
     str or None
+        One of the keys in :data:`SUPPORTED_TRANSFORMS` if a transform was
+        specified, otherwise None.
     """
     if isinstance(entry, str):
         return None

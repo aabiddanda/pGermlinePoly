@@ -185,13 +185,16 @@ class ProbGermline(ReadCountUtils):
             Column indices into ``self.Theta`` to reflect.
         transform_names : list of str or None, optional
             Transform name applied to each column — ``"log10"``, ``"sqrt"``,
-            or ``None`` for raw (untransformed) AF values.  Length must match
-            ``col_indices``.  Default is all None.
+            or ``None`` for raw (untransformed) AF values in [0, 1].  Must be
+            the same length as ``col_indices``.  Default is all None.
 
         Raises
         ------
         RuntimeError
             If called before :meth:`reorient_to_minor_allele`.
+        AssertionError
+            If ``transform_names`` is provided but its length does not match
+            ``col_indices``.
         """
         if not hasattr(self, "flipped"):
             raise RuntimeError(
@@ -200,6 +203,10 @@ class ProbGermline(ReadCountUtils):
             )
         if transform_names is None:
             transform_names = [None] * len(col_indices)
+        assert len(transform_names) == len(col_indices), (
+            f"transform_names length ({len(transform_names)}) must match "
+            f"col_indices length ({len(col_indices)})"
+        )
         for col, tname in zip(col_indices, transform_names):
             # Only reflect sites that were flipped AND have a finite annotation value.
             valid = self.flipped & np.isfinite(self.Theta[:, col])
