@@ -15,6 +15,14 @@ logistic annotation weights and a Beta-Binomial error concentration parameter,
 enabling data-driven discrimination between germline heterozygotes and somatic
 variants.
 
+Beyond the primary EM-based classifier, ``pGermlinePoly`` also provides
+general-purpose tools for somatic variant filtering: a frequentist likelihood
+ratio test (``--lrt``), a Mutect2 LOD score (``--mutect2``), and a
+Beta-Binomial overdispersion statistic (``--betabinomial``). The tool is
+designed to annotate somatic VCFs in-place — all scores are written directly
+to the INFO fields of the input VCF — making it straightforward to integrate
+into existing somatic variant calling pipelines.
+
 .. toctree::
    :maxdepth: 4
    :caption: Contents:

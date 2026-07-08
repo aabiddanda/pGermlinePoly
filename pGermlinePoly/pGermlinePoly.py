@@ -960,7 +960,11 @@ class ProbGermline(ReadCountUtils):
 
 
 class MutectLOD(ReadCountUtils):
-    """Compute per-site LOD scores following the Mutect2 / Williams et al. model.
+    """Compute per-site LOD scores following the Mutect / Cibulskis et al. model.
+
+    Based on the somatic variant calling approach described in:
+    Cibulskis et al., *Nature Biotechnology* (2013).
+    https://doi.org/10.1038/nbt.2514
 
     Parameters
     ----------
@@ -1069,6 +1073,10 @@ class BetaOverdispersion(ReadCountUtils):
     Implements the overdispersion test from Spencer-Chapman et al. by fitting
     the rho parameter of a Beta-Binomial distribution to the observed allele
     counts across clones.
+
+    Based on the approach described in:
+    Spencer Chapman et al., *Nature* (2021).
+    https://doi.org/10.1038/s41586-021-03548-6
 
     The Beta-Binomial model places a Beta mixing distribution on the clone-level
     VAF :math:`p_{kj}`.  At each site k, the J clone read counts are drawn as:
