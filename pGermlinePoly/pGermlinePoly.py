@@ -16,6 +16,7 @@ from poly_utils import (
     sum_log_betabinom,
 )
 from scipy.optimize import minimize, minimize_scalar, brentq
+from scipy.special import expit
 from scipy.stats import beta, binom, chi2, norm, poisson, uniform
 
 logger = logging.getLogger(__name__)
@@ -155,7 +156,7 @@ class ProbGermline(ReadCountUtils):
         """Return a brief string representation of the object."""
         return f"pGermlineObj ({self.M} sites {self.J} clones {self.A} annotations)"
 
-    def impute_anno(self):
+    def impute_anno(self, col_fill_values=None):
         """Impute missing annotation values using column-wise means.
 
         Replaces NaN entries in ``self.Theta`` in-place with the mean of the
@@ -163,6 +164,26 @@ class ProbGermline(ReadCountUtils):
         Columns that are entirely NaN (no observed values) are filled with 0.0
         and a warning is emitted; such columns carry no information and will be
         assigned zero weight by the optimizer.
+
+        Parameters
+        ----------
+        col_fill_values : dict of {int: float}, optional
+            Per-column fill values that override the column-wise mean for
+            specific columns.  Keys are column indices into ``self.Theta``.
+
+            This is important for population allele-frequency (AF) annotations
+            where missingness is *informative*, not random.  A site absent from
+            gnomAD was never observed at detectable frequency — direct evidence
+            that the allele is rare.  By contrast, the column mean is computed
+            only over sites *present* in the database, which skews toward common
+            variants.  Imputing missing sites with that mean assigns them a
+            "common germline het" prior, which is the opposite of what absence
+            implies and collapses the annotation's discriminative power.
+
+            Pass a floor value well below the minimum observed value (e.g.
+            ``nanmin(col) - 2`` in log10 space, placing missing sites two orders
+            of magnitude below the rarest in-DB entry) so that absent sites
+            receive a low-AF prior consistent with their likely rarity.
         """
         assert self.Theta is not None
         col_means = np.nanmean(self.Theta, axis=0)
@@ -176,6 +197,9 @@ class ProbGermline(ReadCountUtils):
                 c,
             )
             col_means[c] = 0.0
+        if col_fill_values:
+            for col, val in col_fill_values.items():
+                col_means[col] = val
         inds = np.where(np.isnan(self.Theta))
         self.Theta[inds] = np.take(col_means, inds[1])
 
@@ -762,42 +786,60 @@ class ProbGermline(ReadCountUtils):
         """
         params0 = np.concatenate([lambdas0, betas0])
         L, B = self.L, self.B
+        M = self.M
         Theta = self.Theta  # (M, L)
         Phi = self.Phi  # (M, J, B) or None
         Phi_bar = self.Phi_bar  # (M, B) or None
 
-        def neg_Q(params):
+        def neg_Q_and_grad(params):
             lam = params[:L]
             bet = params[L:]
 
             logit_pi = Theta @ lam
             if B > 0:
                 logit_pi = logit_pi + Phi_bar @ bet
-            # phi per clone
-            site_part = (Theta @ lam)[:, None]  # (M, 1)
+
+            site_part = logit_pi[:, None]  # (M, 1)
             if B > 0:
                 clone_part = np.einsum("mjb,b->mj", Phi, bet)  # (M, J)
                 logit_phi = site_part + clone_part
             else:
                 logit_phi = np.broadcast_to(site_part, (self.M, self.J))
 
-            log_pi = -np.log1p(np.exp(-logit_pi))
+            log_pi   = -np.log1p(np.exp(-logit_pi))
             log1m_pi = -np.log1p(np.exp(logit_pi))
-            log_phi = -np.log1p(np.exp(-logit_phi))
+            log_phi   = -np.log1p(np.exp(-logit_phi))
             log1m_phi = -np.log1p(np.exp(logit_phi))
 
-            site_term = np.dot(eta, log_pi) + np.dot(1.0 - eta, log1m_pi)
+            site_term  = np.dot(eta, log_pi) + np.dot(1.0 - eta, log1m_pi)
             clone_term = (gammas * log_phi + (1.0 - gammas) * log1m_phi).sum()
-            return -(site_term + clone_term)
+            val = -(site_term + clone_term) / M
+
+            # Analytical gradient (avoids numerical differentiation at large M)
+            sig_pi  = expit(logit_pi)   # (M,)
+            sig_phi = expit(logit_phi)  # (M, J)
+            resid_pi  = eta - sig_pi                     # (M,)
+            resid_phi = gammas - sig_phi                 # (M, J)
+
+            grad_lam = -Theta.T @ (resid_pi + resid_phi.sum(axis=1)) / M
+            if B > 0:
+                grad_bet = -(
+                    Phi_bar.T @ resid_pi
+                    + np.einsum("mj,mjb->b", resid_phi, Phi)
+                ) / M
+            else:
+                grad_bet = np.empty(0)
+
+            return val, np.concatenate([grad_lam, grad_bet])
 
         bounds = [(-20.0, 20.0)] * (L + B)
         opt = minimize(
-            neg_Q,
+            neg_Q_and_grad,
             params0,
             method=algo,
+            jac=True,
             bounds=bounds,
-            tol=1e-8,
-            options={"disp": False},
+            options={"disp": False, "ftol": 1e-12, "gtol": 1e-7},
         )
         if not opt.success:
             logger.warning(
