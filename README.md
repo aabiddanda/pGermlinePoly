@@ -5,11 +5,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+<p align="center">
+  <img src="docs/_static/pGermlinePoly_logo.png" alt="pGermlinePoly logo" width="70%">
+</p>
+
 # pGermlinePoly
 
-`pGermlinePoly` is a Bayesian model to estimate the posterior probability of germline polymorphism in somatic sequencing data.
+`pGermlinePoly` is a Bayesian model to estimate the posterior probability of germline polymorphism in somatic sequencing data. Annotation weights — capturing how features such as population allele frequency or sequencing depth inform the germline prior — are learned directly from the data via empirical Bayes rather than specified by the user. The underlying EM algorithm jointly estimates these logistic annotation weights and a Beta-Binomial error concentration parameter, enabling data-driven discrimination between germline heterozygotes and somatic variants.
 
-The model is flexible to account for a number of annotations that can be informative of distinguishing a true germline variant from an underlying somatic variant (e.g. global allele frequency). The underlying EM-algorithm estimates weights of how each annotation contributes to the probability of being a true germline polymorphism. After maximum-likelihood estimation of these parameters, the posterior probability of each variant is obtained.
+Beyond the primary EM-based classifier, `pGermlinePoly` also provides general-purpose tools for somatic variant filtering: a frequentist likelihood ratio test (`--lrt`), a Mutect2 LOD score (`--mutect2`), and a Beta-Binomial overdispersion statistic (`--betabinomial`). The tool is designed to annotate somatic VCFs in-place — all scores are written directly to the INFO fields of the input VCF — making it straightforward to integrate into existing somatic variant calling pipelines.
 
 ## Installation
 
@@ -23,7 +27,7 @@ We highly recommend installing `pGermlinePoly` within a standalone environment (
 
 ## Running `pGermlinePoly`
 
-The core algorithm for annotating a clonal sequencing VCF file is wrapped in the executable `pGermlinePoly`. At least one inference mode flag (`--em`, `--lrt`, `--mutect2`, or `--betabinomial`) must be specified.
+The core algorithm for annotating a clonal sequencing VCF file is wrapped in the executable `pGermlinePoly`. At least one inference mode flag (`--em`, `--lrt`, `--mutect2`, `--betabinomial`, or `--geno`) must be specified.
 
 ```
 Usage: pGermlinePoly [OPTIONS]
@@ -46,6 +50,9 @@ Options:
                                   [default: 0.001]
   -d, --delta FLOAT               EM convergence threshold (absolute change in
                                   log-likelihood).  [default: 0.0001]
+  --max-iter INTEGER              Maximum number of EM iterations before
+                                  stopping regardless of convergence.
+                                  [default: 50]
   --em                            Run the EM algorithm to estimate annotation
                                   weights (lambda) and Beta-Binomial
                                   concentration (kappa).
@@ -54,8 +61,25 @@ Options:
   --mutect2                       LOD Score from Mutect2.
   --betabinomial                  Implement the Beta-Binomial overdispersion
                                   method from Spencer-Chapman et al.
+  --geno                          Compute per-site log-posterior probabilities
+                                  over germline genotypes {0/0, 0/1, 1/1} at
+                                  the clonal phylogeny root. Uses annotation
+                                  weights estimated by --em when available;
+                                  otherwise applies flat (zero) weights.
   -o, --out TEXT                  Output VCF file (defaults to stdout)
                                   [default: - required]
+  --reorient / --no-reorient      Re-orient sites where the pooled alt
+                                  frequency exceeds 0.5 so the alt column
+                                  tracks the minority allele during modeling.
+                                  mleVAF is always reported relative to the
+                                  original ALT allele.  [default: reorient]
+  --anno-std                      Standardize each annotation column (post-
+                                  transform) to zero mean and unit variance
+                                  before fitting. Improves optimizer
+                                  convergence when annotations are on very
+                                  different scales.
+  --logfile PATH                  Write log messages to this file instead of
+                                  stderr.
   --help                          Show this message and exit.
 ```
 
@@ -120,6 +144,10 @@ Estimates the LOD score for somatic variants using the Mutect2 model. Annotates 
 
 Implements the Beta-Binomial overdispersion approach from Spencer-Chapman et al. to detect read-count overdispersion indicative of somatic variants. Annotates the output VCF with `rhobeta`.
 
+### Germline Genotype Posteriors (`--geno`)
+
+Computes per-site log-posterior probabilities over the three germline genotypes at the clonal phylogeny root: `{0/0, 0/1, 1/1}`. When combined with `--em`, annotation weights estimated by the EM algorithm are used to inform the prior; without `--em`, flat (zero) weights are applied and a warning is issued. Annotates the output VCF with `ppGermlineGeno` (formatted as `logP(0/0):logP(0/1):logP(1/1)`).
+
 
 ## Simulating somatic clonal sequencing data
 
@@ -180,6 +208,8 @@ Options:
                                  genealogy (unscaled).
   -oc, --out_config TEXT         Output yaml-based config file for applying
                                  inference post-hoc.
+  --logfile PATH                 Write log messages to this file instead of
+                                 stderr.
   --help                         Show this message and exit.
 
 ```
