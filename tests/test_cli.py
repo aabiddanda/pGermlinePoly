@@ -916,3 +916,105 @@ def test_cli_reflect_af_annotations(sim_vcf_paths, tmp_path):
     assert "ppGermlinePoly" in content
     assert "##lambda_intercept=" in content
     assert "##lambda_ExternalAF=" in content
+
+
+def _het_info(out_fp):
+    """Return the ppGermlinePoly values from a written VCF."""
+    vals = []
+    for line in out_fp.read_text().splitlines():
+        if line.startswith("#"):
+            continue
+        for kv in line.split("\t")[7].split(";"):
+            if kv.startswith("ppGermlinePoly="):
+                vals.append(float(kv.split("=")[1]))
+    return vals
+
+
+def test_cli_het_conc_defaults_to_point_mass(sim_vcf_paths, tmp_path):
+    """Without --het-conc the het component stays pinned at p = 0.5."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp,
+         "--em", "-o", out_fp]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "##het_conc=inf" in content
+    assert "##het_mode=clone" in content
+
+
+def test_cli_het_conc_explicit_value_is_recorded(sim_vcf_paths, tmp_path):
+    """An explicit --het-conc is applied and written to the header."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp,
+         "--em", "--het-conc", "25", "-o", out_fp]
+    )
+    assert result.exit_code == 0, result.output
+    assert "##het_conc=25.0" in out_fp.read_text()
+
+
+def test_cli_het_conc_changes_the_scores(sim_vcf_paths, tmp_path):
+    """Relaxing the het component must actually move the posteriors."""
+    base_fp = tmp_path / "base.vcf"
+    relaxed_fp = tmp_path / "relaxed.vcf"
+    args = ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp, "--em"]
+    assert _run(args + ["-o", base_fp]).exit_code == 0
+    assert _run(args + ["--het-conc", "10", "-o", relaxed_fp]).exit_code == 0
+    base, relaxed = _het_info(base_fp), _het_info(relaxed_fp)
+    assert len(base) == len(relaxed) and len(base) > 0
+    assert base != relaxed
+
+
+def test_cli_het_conc_auto_runs_and_records_result(sim_vcf_paths, tmp_path):
+    """--het-conc auto either calibrates or falls back, but always succeeds.
+
+    The fixture is small enough that the calibration selections may not reach
+    ``min_records``. That must degrade to the p = 0.5 point mass rather than
+    raising, and the header must record whichever value was used.
+    """
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp,
+         "--em", "--het-conc", "auto", "-o", out_fp]
+    )
+    assert result.exit_code == 0, result.output
+    match = re.search(r"##het_conc=(\S+)", out_fp.read_text())
+    assert match is not None
+    value = float(match.group(1))
+    assert math.isinf(value) or 0.0 < value < 1e12
+
+
+def test_cli_het_conc_auto_rejects_site_mode(sim_vcf_paths, tmp_path):
+    """Calibrating a site-level concentration would be circular, so it errors."""
+    result = _run(
+        ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp,
+         "--em", "--het-conc", "auto", "--het-mode", "site",
+         "-o", tmp_path / "out.vcf"]
+    )
+    assert result.exit_code != 0
+    assert "circular" in result.output
+
+
+@pytest.mark.parametrize("bad", ["banana", "-5", "0"])
+def test_cli_het_conc_rejects_invalid_values(sim_vcf_paths, tmp_path, bad):
+    """Non-numeric and non-positive concentrations are rejected."""
+    result = _run(
+        ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp,
+         "--em", "--het-conc", bad, "-o", tmp_path / "out.vcf"]
+    )
+    assert result.exit_code != 0
+    assert "--het-conc" in result.output
+
+
+def test_cli_het_mode_site_accepted_with_explicit_conc(sim_vcf_paths, tmp_path):
+    """Site mode runs when the concentration is supplied explicitly."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp,
+         "--em", "--het-conc", "400", "--het-mode", "site", "-o", out_fp]
+    )
+    assert result.exit_code == 0, result.output
+    content = out_fp.read_text()
+    assert "##het_conc=400.0" in content
+    assert "##het_mode=site" in content

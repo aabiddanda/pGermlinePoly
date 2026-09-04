@@ -190,6 +190,36 @@ def setup_logging(logfile=None):
     ),
 )
 @click.option(
+    "--het-conc",
+    required=False,
+    default="none",
+    type=str,
+    help=(
+        "Concentration of the symmetric Beta(c/2, c/2) prior on the germline "
+        "heterozygote VAF, which lets the het component absorb allelic "
+        "imbalance instead of being pinned at exactly 0.5. "
+        "'none' (default) keeps the p=0.5 point mass and reproduces earlier "
+        "releases; 'auto' estimates it from the data with "
+        "ProbGermline.calibrate_het_conc; a float sets it directly. "
+        "Smaller values are more permissive: c is roughly 2x the mean "
+        "per-clone depth, and the implied read-count variance inflation over "
+        "binomial is 1 + (n-1)/(c+1)."
+    ),
+)
+@click.option(
+    "--het-mode",
+    required=False,
+    default="clone",
+    type=click.Choice(["clone", "site"]),
+    help=(
+        "Whether the heterozygote VAF is drawn once per clone or once per "
+        "site (shared across clones, i.e. pooled counts). Only 'clone' may be "
+        "combined with '--het-conc auto': calibration selects on the pooled "
+        "allele fraction, which is the very quantity a site-level "
+        "concentration describes, so estimating it that way is circular."
+    ),
+)
+@click.option(
     "--logfile",
     required=False,
     default=None,
@@ -213,6 +243,8 @@ def main(
     out,
     reorient,
     anno_std,
+    het_conc,
+    het_mode,
     logfile,
 ):
     """Run the pGermlinePoly inference pipeline on an input VCF.
@@ -227,6 +259,34 @@ def main(
     if not any([em, lrt, mutect2, betabinomial, geno]):
         raise click.UsageError(
             "At least one of --em, --lrt, --mutect2, or --betabinomial must be specified."
+        )
+    het_conc_arg = str(het_conc).strip().lower()
+    if het_conc_arg in ("none", "inf", "off"):
+        het_conc_value = np.inf
+    elif het_conc_arg == "auto":
+        het_conc_value = "auto"
+    else:
+        try:
+            het_conc_value = float(het_conc_arg)
+        except ValueError:
+            raise click.UsageError(
+                f"--het-conc must be 'none', 'auto', or a positive float; "
+                f"got {het_conc!r}."
+            )
+        if het_conc_value <= 0.0:
+            raise click.UsageError(
+                f"--het-conc must be positive; got {het_conc_value}."
+            )
+    if het_conc_value == "auto" and het_mode != "clone":
+        raise click.UsageError(
+            "--het-conc auto requires --het-mode clone. Calibration selects "
+            "sites on their pooled allele fraction, which is what a "
+            "site-level concentration measures, so the estimate would be "
+            "circular. Pass an explicit --het-conc for --het-mode site."
+        )
+    if het_conc_value != "auto" and not np.isinf(het_conc_value) and not em:
+        logging.warning(
+            "--het-conc only affects the EM model; it is ignored without --em."
         )
     logging.info("Checking config structure ...")
     config = validate_config(config)
@@ -266,7 +326,13 @@ def main(
     # Prepend intercept so the logit prior has a learnable baseline.
     # Without it, sites with annotation = 0 are locked at logit = 0 (prior = 0.5).
     full_anno = np.hstack([np.ones((full_anno.shape[0], 1)), full_anno])
-    p_germline = ProbGermline(X=clone_reads, Theta=full_anno, mu=eps)
+    p_germline = ProbGermline(
+        X=clone_reads,
+        Theta=full_anno,
+        mu=eps,
+        het_conc=np.inf if het_conc_value == "auto" else het_conc_value,
+        het_mode=het_mode,
+    )
 
     # Reorientation and AF reflection happen before imputation so that NaN
     # sites (absent from the population reference) are not reflected.
@@ -338,6 +404,19 @@ def main(
         logging.info("Estimating Naive VAF from pooled reads...")
         p_germline.mle_vaf()
         logging.info("Finished VAF estimation from pooled reads!")
+        if het_conc_value == "auto":
+            logging.info("Calibrating heterozygote VAF concentration...")
+            c_hat = p_germline.calibrate_het_conc(method="both")
+            if np.isnan(c_hat):
+                logging.warning(
+                    "Calibration failed to produce an estimate; falling back "
+                    "to the p=0.5 point-mass heterozygote component."
+                )
+            else:
+                p_germline.het_conc = c_hat
+                logging.info(
+                    "Calibrated het_conc = %.4f (mode=%s)", c_hat, het_mode
+                )
         logging.info("Starting EM-algorithm...")
         _, lambdas_hat, betas_hat, kappa_hat = p_germline.em_algo(
             algo=algo, delta_logll=delta, max_iter=max_iter
@@ -464,6 +543,8 @@ def main(
         for a, lhat in zip(anno_names, lambdas_hat):
             out_vcf.add_to_header(f"##lambda_{a}={lhat}")
         out_vcf.add_to_header(f"##kappa_hat={kappa_hat}")
+        out_vcf.add_to_header(f"##het_conc={p_germline.het_conc}")
+        out_vcf.add_to_header(f"##het_mode={p_germline.het_mode}")
         all_nan_cols = getattr(p_germline, "all_nan_cols", set())
         if all_nan_cols:
             degenerate_names = [
