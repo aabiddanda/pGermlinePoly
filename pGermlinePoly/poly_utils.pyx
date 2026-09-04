@@ -2,6 +2,8 @@
 # cython: cdivision=True
 # cython: wraparound=False
 
+import numpy as np
+
 from libc.math cimport exp, expm1, log, log1p, log10, lgamma
 from cython.parallel cimport prange
 
@@ -1119,7 +1121,7 @@ cpdef void e_step_all(
 
 cpdef double kappa_Q(
         long[:, :, :] X, double[:, :] gammas,
-        double mu, double kappa):
+        double mu, double kappa, double[:] eta=None):
     """Evaluate the kappa M-step objective Q(kappa).
 
     Computes the expected log Beta-Binomial contribution to the complete-data
@@ -1133,27 +1135,36 @@ cpdef double kappa_Q(
         X[k, j, 1] = alt reads.
     gammas : double[:, :]
         Clone-level carrier responsibilities from the E-step, shape (M, J).
+        These are conditional on the site *not* being a germline het.
     mu : double
         Mean of the Beta-Binomial error distribution.
     kappa : double
         Concentration parameter to evaluate the objective at.
+    eta : double[:] or None, optional
+        Site-level germline responsibilities, shape (M,). The Beta-Binomial
+        error term only enters the complete-data log-likelihood on the
+        non-germline branch, so each site is weighted by (1 - eta_k). None is
+        equivalent to eta = 0 (every site treated as non-germline), which
+        reproduces the pre-correction behaviour.
 
     Returns
     -------
     double
-        Q(kappa) = sum_{k,j} (1 - gamma_kj)
+        Q(kappa) = sum_{k,j} (1 - eta_k) (1 - gamma_kj)
                    * log_betabinom(a_kj, n_kj, mu*kappa, (1-mu)*kappa).
     """
     cdef int k, j, M = X.shape[0], J = X.shape[1]
-    cdef double Q = 0.0, a, n
+    cdef double Q = 0.0, a, n, w_k
     cdef double alpha = mu * kappa
     cdef double beta = (1.0 - mu) * kappa
     cdef double log_norm = lgamma(kappa) - lgamma(alpha) - lgamma(beta)
+    cdef double[:] eta_v = np.zeros(M) if eta is None else eta
     for k in prange(M, schedule="static", nogil=True):
+        w_k = 1.0 - eta_v[k]
         for j in range(J):
             a = X[k, j, 1]
             n = X[k, j, 0] + X[k, j, 1]
-            Q += (1.0 - gammas[k, j]) * log_betabinom_prenorm(
+            Q += w_k * (1.0 - gammas[k, j]) * log_betabinom_prenorm(
                 <long>a, <long>n, alpha, beta, log_norm
             )
     return Q
@@ -1161,7 +1172,7 @@ cpdef double kappa_Q(
 
 cpdef double kappa_score(
         long[:, :, :] X, double[:, :] gammas,
-        double mu, double kappa):
+        double mu, double kappa, double[:] eta=None):
     """Compute the score dQ/dkappa for use in Brent's method.
 
     Evaluates the first derivative of the kappa M-step objective with respect
@@ -1179,6 +1190,11 @@ cpdef double kappa_score(
         Mean of the Beta-Binomial error distribution.
     kappa : double
         Concentration parameter at which to evaluate the score.
+    eta : double[:] or None, optional
+        Site-level germline responsibilities, shape (M,). Each site is
+        weighted by (1 - eta_k) because the Beta-Binomial error term only
+        appears on the non-germline branch. None is equivalent to eta = 0,
+        reproducing the pre-correction behaviour.
 
     Returns
     -------
@@ -1187,7 +1203,7 @@ cpdef double kappa_score(
 
     Notes
     -----
-    dQ/dkappa = sum_{k,j} (1 - gamma_kj) * [
+    dQ/dkappa = sum_{k,j} (1 - eta_k) (1 - gamma_kj) * [
         mu * psi(a + mu*kappa) + (1-mu) * psi(n-a + (1-mu)*kappa)
         - psi(n + kappa) - mu * psi(mu*kappa)
         - (1-mu) * psi((1-mu)*kappa) + psi(kappa)
@@ -1195,12 +1211,14 @@ cpdef double kappa_score(
     where psi denotes the digamma function.
     """
     cdef int k, j, M = X.shape[0], J = X.shape[1]
-    cdef double score = 0.0, a, n, w
+    cdef double score = 0.0, a, n, w, w_k
+    cdef double[:] eta_v = np.zeros(M) if eta is None else eta
     for k in prange(M, schedule="static", nogil=True):
+        w_k = 1.0 - eta_v[k]
         for j in range(J):
             a = X[k, j, 1]
             n = X[k, j, 0] + X[k, j, 1]
-            w = 1.0 - gammas[k, j]
+            w = w_k * (1.0 - gammas[k, j])
             score += w * (
                 mu * digamma(a + mu * kappa)
                 + (1.0 - mu) * digamma(n - a + (1.0 - mu) * kappa)

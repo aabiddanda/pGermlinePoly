@@ -788,8 +788,15 @@ class ProbGermline(ReadCountUtils):
            Q(\boldsymbol{\lambda}, \boldsymbol{\beta}) =
                \sum_k \bigl[\eta_k \log \sigma(\pi_k)
                    + (1-\eta_k)\log(1-\sigma(\pi_k))\bigr]
-               + \sum_{k,j} \bigl[\gamma_{kj} \log \sigma(\phi_{kj})
+               + \sum_k (1 - \eta_k) \sum_j
+                   \bigl[\gamma_{kj} \log \sigma(\phi_{kj})
                    + (1-\gamma_{kj})\log(1-\sigma(\phi_{kj}))\bigr]
+
+        The carrier indicator :math:`c_{kj}` exists only on the non-germline
+        branch, and :math:`\gamma_{kj}` is conditional on :math:`z_k = 0`, so
+        :math:`E[(1-z_k)c_{kj}] = (1-\eta_k)\gamma_{kj}`. Dropping the
+        :math:`(1-\eta_k)` factor makes Q cease to minorise the observed
+        log-likelihood and breaks the EM ascent guarantee.
 
         where :math:`\pi_k = \boldsymbol{\theta}_k^\top \boldsymbol{\lambda}`
         and :math:`\phi_{kj} = \boldsymbol{\theta}_k^\top \boldsymbol{\lambda}
@@ -822,6 +829,8 @@ class ProbGermline(ReadCountUtils):
         Theta = self.Theta  # (M, L)
         Phi = self.Phi  # (M, J, B) or None
         Phi_bar = self.Phi_bar  # (M, B) or None
+        # Carrier terms live on the non-germline branch only.
+        w_site = (1.0 - eta)[:, None]  # (M, 1)
 
         def neg_Q_and_grad(params):
             lam = params[:L]
@@ -843,15 +852,17 @@ class ProbGermline(ReadCountUtils):
             log_phi   = -np.log1p(np.exp(-logit_phi))
             log1m_phi = -np.log1p(np.exp(logit_phi))
 
-            site_term  = np.dot(eta, log_pi) + np.dot(1.0 - eta, log1m_pi)
-            clone_term = (gammas * log_phi + (1.0 - gammas) * log1m_phi).sum()
+            site_term = np.dot(eta, log_pi) + np.dot(1.0 - eta, log1m_pi)
+            clone_term = (
+                w_site * (gammas * log_phi + (1.0 - gammas) * log1m_phi)
+            ).sum()
             val = -(site_term + clone_term) / M
 
             # Analytical gradient (avoids numerical differentiation at large M)
             sig_pi  = expit(logit_pi)   # (M,)
             sig_phi = expit(logit_phi)  # (M, J)
-            resid_pi  = eta - sig_pi                     # (M,)
-            resid_phi = gammas - sig_phi                 # (M, J)
+            resid_pi = eta - sig_pi                       # (M,)
+            resid_phi = w_site * (gammas - sig_phi)       # (M, J)
 
             grad_lam = -Theta.T @ (resid_pi + resid_phi.sum(axis=1)) / M
             if B > 0:
@@ -1155,32 +1166,55 @@ class ProbGermline(ReadCountUtils):
             c_hat = self.het_conc
         return float(c_hat)
 
-    def _m_step_kappa(self, gammas):
+    def _m_step_kappa(self, gammas, eta=None, kappa=None):
         """Run the M-step to update kappa via Brent's method on the score function.
 
         The score dQ/dkappa is evaluated by the Cython
-        :func:`~poly_utils.kappa_score` function. Brent's method is applied
-        over [1e-2, 1e6]; if no sign change is found the current kappa is
-        kept, as in Eqs. 13-14.
+        :func:`~poly_utils.kappa_score` function, weighted by (1 - eta_k) so
+        that it maximises the true expected complete-data log-likelihood.
+        Brent's method is applied over [1e-2, 1e6]. When the score does not
+        change sign the objective is monotone in kappa across the bracket, so
+        the constrained maximiser is whichever endpoint the score points
+        toward; returning that endpoint keeps Q non-decreasing. Falling back
+        to a stored default instead would break the EM ascent guarantee, since
+        the default need not be the current iterate.
 
         Parameters
         ----------
         gammas : numpy.ndarray
             Clone-level responsibilities from the E-step, shape (M, J).
+        eta : numpy.ndarray or None, optional
+            Site-level responsibilities from the E-step, shape (M,). The
+            Beta-Binomial error term only appears on the non-germline branch,
+            so sites are weighted by (1 - eta_k). None reproduces the
+            pre-correction behaviour and is retained only for comparison.
+        kappa : float or None, optional
+            The current kappa iterate, returned unchanged if no update can be
+            made. None falls back to ``self.kappa``, which is only the current
+            iterate when the caller keeps that attribute in sync.
 
         Returns
         -------
         float
             Updated concentration parameter kappa.
         """
-        score_fn = lambda k: kappa_score(self.X, gammas, self.mu, k)
+        kappa_cur = float(self.kappa if kappa is None else kappa)
+        eta_w = None if eta is None else np.ascontiguousarray(eta, dtype=np.float64)
+        score_fn = lambda k: kappa_score(self.X, gammas, self.mu, k, eta_w)
         lo, hi = 1e-2, 1e6
         try:
-            if score_fn(lo) * score_fn(hi) >= 0:
-                return self.kappa  # no sign change — keep current value
+            score_lo, score_hi = score_fn(lo), score_fn(hi)
+            if score_lo * score_hi >= 0:
+                # Q is monotone in kappa over the bracket: take the endpoint it
+                # increases toward, so this remains a valid (G)EM step.
+                if score_hi > 0.0:
+                    return hi
+                if score_lo < 0.0:
+                    return lo
+                return kappa_cur
             kappa_hat = brentq(score_fn, lo, hi, xtol=1e-6, rtol=1e-6)
         except ValueError:
-            kappa_hat = self.kappa
+            kappa_hat = kappa_cur
         return float(kappa_hat)
 
     def em_algo(
@@ -1272,7 +1306,8 @@ class ProbGermline(ReadCountUtils):
             )
 
             # M-step: kappa (Brent on Cython score function)
-            kappa = self._m_step_kappa(gammas)
+            kappa = self._m_step_kappa(gammas, eta, kappa)
+            self.kappa = kappa  # keep object state in sync with the iterate
 
             # M-step: het VAF concentration (opt-in; see fit_het_conc)
             if fit_het_conc:
