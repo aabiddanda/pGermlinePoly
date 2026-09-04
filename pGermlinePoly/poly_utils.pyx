@@ -165,6 +165,103 @@ cpdef double logprob_het(long[:] ax, long[:] rx):
         ll += logbinomial(ax[i], rx[i], p=0.5)
     return ll
 
+
+cdef inline bint _het_point_mass(double c) noexcept nogil:
+    """Return True when the het component collapses to the p = 0.5 point mass.
+
+    Non-finite, non-positive, or very large concentrations all disable the
+    Beta-Binomial relaxation, so ``c = inf`` (or the 0.0 default) reproduces
+    :func:`logprob_het` exactly.
+    """
+    return not (c > 0.0 and c < 1e12)
+
+
+cdef double _het_loglik(long[:] ax, long[:] rx,
+                        double het_conc, int het_mode) noexcept nogil:
+    """Germline-het log-likelihood kernel (binomial coefficient omitted).
+
+    Relaxes the fixed p = 0.5 of :func:`logprob_het` by placing a symmetric
+    Beta(c/2, c/2) prior on the heterozygote VAF and integrating it out.
+
+    ``het_mode = 0`` draws a single VAF per *site* and shares it across clones.
+    Because the per-clone binomial coefficients factor out of the product they
+    cancel against the somatic term exactly as they do for the point mass, so
+    the integral is a Beta-Binomial on the pooled counts.
+
+    ``het_mode = 1`` draws an independent VAF per *clone*, giving a product of
+    per-clone Beta-Binomials.
+
+    Both reduce to ``sum_j n_j log 0.5`` as ``c -> inf``.
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+    het_conc : double
+        Concentration c of the Beta(c/2, c/2) VAF prior. Values that are
+        non-positive, non-finite, or >= 1e12 select the p = 0.5 point mass.
+    het_mode : int
+        0 for a site-level (pooled) VAF, 1 for a per-clone VAF.
+
+    Returns
+    -------
+    double
+        log P(A_k, R_k | z_k = het).
+    """
+    cdef int j, J = ax.shape[0]
+    cdef double h, log_norm, acc = 0.0
+    cdef long A = 0, N = 0, n_j
+
+    if _het_point_mass(het_conc):
+        for j in range(J):
+            acc += logbinomial(ax[j], rx[j], 0.5)
+        return acc
+
+    h = 0.5 * het_conc
+    log_norm = lgamma(het_conc) - 2.0 * lgamma(h)
+
+    if het_mode == 0:
+        for j in range(J):
+            A += ax[j]
+            N += ax[j] + rx[j]
+        return (lgamma(<double>A + h) + lgamma(<double>(N - A) + h)
+                - lgamma(<double>N + het_conc) + log_norm)
+
+    for j in range(J):
+        n_j = ax[j] + rx[j]
+        acc += (lgamma(<double>ax[j] + h) + lgamma(<double>rx[j] + h)
+                - lgamma(<double>n_j + het_conc) + log_norm)
+    return acc
+
+
+cpdef double logprob_het_bb(long[:] ax, long[:] rx,
+                            double het_conc, int het_mode=0):
+    """Compute the het log-likelihood with a Beta(c/2, c/2) VAF prior.
+
+    Public wrapper around the kernel used by :func:`log_posterior_germline`
+    and :func:`e_step_all`. See :func:`_het_loglik` for the parameterisation.
+
+    Parameters
+    ----------
+    ax : long[:]
+        Alternative read counts per clone, shape (J,).
+    rx : long[:]
+        Reference read counts per clone, shape (J,).
+    het_conc : double
+        Concentration c of the Beta(c/2, c/2) VAF prior.
+    het_mode : int, optional
+        0 for a site-level (pooled) VAF, 1 for a per-clone VAF. Default is 0.
+
+    Returns
+    -------
+    double
+        log P(A_k, R_k | z_k = het).
+    """
+    return _het_loglik(ax, rx, het_conc, het_mode)
+
+
 cpdef double logprob_somatic(long[:] ax, long[:] rx, double alpha, double eps=1e-3):
     """Compute the log-likelihood of reads under a somatic mutation model.
 
@@ -759,7 +856,8 @@ cpdef double log_gamma_jk(
 
 cpdef double log_posterior_germline(long[:] ax, long[:] rx,
                                 double[:] logit_phi, double logit_pi,
-                                double mu, double kappa):
+                                double mu, double kappa,
+                                double het_conc=0.0, int het_mode=0):
     """Compute the log posterior probability that site k is a germline heterozygote.
 
     Returns log P(z_k = het | A_k, R_k) by combining the site-level prior
@@ -788,7 +886,7 @@ cpdef double log_posterior_germline(long[:] ax, long[:] rx,
     """
     cdef double log_pi = log_logistic(logit_pi)
     cdef double log1m_pi = log_logistic(-logit_pi)
-    cdef double log_p_het = logprob_het(ax, rx)
+    cdef double log_p_het = _het_loglik(ax, rx, het_conc, het_mode)
     cdef double log_p_som = 0.0
     cdef int j, J = ax.size
     for j in range(J):
@@ -801,7 +899,8 @@ cpdef double log_posterior_germline(long[:] ax, long[:] rx,
 cpdef double observed_loglik_site(
         long[:] ax, long[:] rx,
         double[:] logit_phi, double logit_pi,
-        double mu, double kappa):
+        double mu, double kappa,
+        double het_conc=0.0, int het_mode=0):
     """Compute the observed-data log-likelihood for a single site.
 
     Marginalizes over the latent class z_k to give
@@ -829,7 +928,7 @@ cpdef double observed_loglik_site(
     """
     cdef double log_pi = log_logistic(logit_pi)
     cdef double log1m_pi = log_logistic(-logit_pi)
-    cdef double log_p_het = logprob_het(ax, rx)
+    cdef double log_p_het = _het_loglik(ax, rx, het_conc, het_mode)
     cdef double log_p_som = 0.0
     cdef int j, J = ax.size
     for j in range(J):
@@ -837,7 +936,8 @@ cpdef double observed_loglik_site(
     return logaddexp(log_pi + log_p_het, log1m_pi + log_p_som)
 
 
-cdef double _log_p_het_row(long[:, :, :] X, int k, int J) nogil:
+cdef double _log_p_het_row(long[:, :, :] X, int k, int J,
+                           double het_conc, int het_mode) nogil:
     """Sum the heterozygote log-likelihood over all clones for site k.
 
     Parameters
@@ -852,12 +952,32 @@ cdef double _log_p_het_row(long[:, :, :] X, int k, int J) nogil:
     Returns
     -------
     double
-        sum_j logBinom(X[k,j,1], X[k,j,0]; p=0.5).
+        log P(A_k, R_k | z_k = het) under the het_conc / het_mode
+        parameterisation of :func:`_het_loglik`.
     """
     cdef int j
-    cdef double acc = 0.0
+    cdef double h, log_norm, acc = 0.0
+    cdef long A = 0, N = 0, n_j
+
+    if _het_point_mass(het_conc):
+        for j in range(J):
+            acc += logbinomial(X[k, j, 1], X[k, j, 0], 0.5)
+        return acc
+
+    h = 0.5 * het_conc
+    log_norm = lgamma(het_conc) - 2.0 * lgamma(h)
+
+    if het_mode == 0:
+        for j in range(J):
+            A += X[k, j, 1]
+            N += X[k, j, 0] + X[k, j, 1]
+        return (lgamma(<double>A + h) + lgamma(<double>(N - A) + h)
+                - lgamma(<double>N + het_conc) + log_norm)
+
     for j in range(J):
-        acc += logbinomial(X[k, j, 1], X[k, j, 0], 0.5)
+        n_j = X[k, j, 0] + X[k, j, 1]
+        acc += (lgamma(<double>X[k, j, 1] + h) + lgamma(<double>X[k, j, 0] + h)
+                - lgamma(<double>n_j + het_conc) + log_norm)
     return acc
 
 
@@ -951,7 +1071,8 @@ cpdef void e_step_all(
         double[:] logit_pi,
         double mu, double kappa,
         double[:] eta_out,
-        double[:, :] gammas_out):
+        double[:, :] gammas_out,
+        double het_conc=0.0, int het_mode=0):
     """Compute E-step responsibilities for all sites in parallel.
 
     Fills ``eta_out`` with site-level posterior probabilities of germline
@@ -986,7 +1107,7 @@ cpdef void e_step_all(
     cdef double log_norm = lgamma(kappa) - lgamma(alpha) - lgamma(beta)
 
     for k in prange(M, schedule="static", nogil=True):
-        log_p_het_k = _log_p_het_row(X, k, J)
+        log_p_het_k = _log_p_het_row(X, k, J, het_conc, het_mode)
         log_p_som_k = _log_p_som_row(X, logit_phi, k, J, alpha, beta, log_norm)
         log_pi_k = log_logistic(logit_pi[k])
         log1m_pi_k = log_logistic(-logit_pi[k])
@@ -1088,4 +1209,138 @@ cpdef double kappa_score(
                 - (1.0 - mu) * digamma((1.0 - mu) * kappa)
                 + digamma(kappa)
             )
+    return score
+
+
+cpdef double het_conc_Q(
+        long[:, :, :] X, double[:] eta,
+        double het_conc, int het_mode=0):
+    """Evaluate the het-concentration M-step objective Q(c).
+
+    The germline component enters the complete-data log-likelihood only
+    through the site-level responsibilities, so the objective is
+
+        Q(c) = sum_k eta_k * log P(A_k, R_k | z_k = het; c)
+
+    with the per-site term supplied by :func:`_het_loglik`.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2); X[k, j, 0] = ref reads,
+        X[k, j, 1] = alt reads.
+    eta : double[:]
+        Site-level germline responsibilities from the E-step, shape (M,).
+    het_conc : double
+        Concentration c at which to evaluate the objective.
+    het_mode : int, optional
+        0 for a site-level (pooled) VAF, 1 for a per-clone VAF. Default is 0.
+
+    Returns
+    -------
+    double
+        Q(c).
+    """
+    cdef int k, M = X.shape[0], J = X.shape[1]
+    cdef double Q = 0.0
+    for k in prange(M, schedule="static", nogil=True):
+        Q += eta[k] * _log_p_het_row(X, k, J, het_conc, het_mode)
+    return Q
+
+
+cdef double _het_conc_score_row(
+        long[:, :, :] X, int k, int J,
+        double het_conc, double h, double base, int het_mode) noexcept nogil:
+    """Per-site contribution to dQ/dc, excluding the eta_k weight.
+
+    Split out of :func:`het_conc_score` so the pooled-count accumulators are
+    local to a plain loop; Cython treats in-``prange`` accumulators as
+    reduction variables and forbids reading them.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2).
+    k : int
+        Site index.
+    J : int
+        Number of clones.
+    het_conc : double
+        Concentration c.
+    h : double
+        Precomputed c / 2.
+    base : double
+        Precomputed digamma(c) - digamma(c/2).
+    het_mode : int
+        0 for a site-level (pooled) VAF, 1 for a per-clone VAF.
+
+    Returns
+    -------
+    double
+        d/dc log P(A_k, R_k | z_k = het).
+    """
+    cdef int j
+    cdef long A = 0, N = 0, a_kj, r_kj, n_kj
+    cdef double acc = 0.0
+
+    if het_mode == 0:
+        for j in range(J):
+            A += X[k, j, 1]
+            N += X[k, j, 0] + X[k, j, 1]
+        return (0.5 * digamma(<double>A + h)
+                + 0.5 * digamma(<double>(N - A) + h)
+                - digamma(<double>N + het_conc)
+                + base)
+
+    for j in range(J):
+        a_kj = X[k, j, 1]
+        r_kj = X[k, j, 0]
+        n_kj = a_kj + r_kj
+        acc += (0.5 * digamma(<double>a_kj + h)
+                + 0.5 * digamma(<double>r_kj + h)
+                - digamma(<double>n_kj + het_conc)
+                + base)
+    return acc
+
+
+cpdef double het_conc_score(
+        long[:, :, :] X, double[:] eta,
+        double het_conc, int het_mode=0):
+    """Compute the score dQ/dc for the het-concentration M-step.
+
+    Differentiates :func:`het_conc_Q` with respect to c via digamma
+    functions, for use as the bracketing function in Brent's method.
+    Returns 0.0 when ``het_conc`` selects the p = 0.5 point mass, since the
+    objective no longer depends on c there.
+
+    Parameters
+    ----------
+    X : long[:, :, :]
+        Read count array of shape (M, J, 2); X[k, j, 0] = ref reads,
+        X[k, j, 1] = alt reads.
+    eta : double[:]
+        Site-level germline responsibilities from the E-step, shape (M,).
+    het_conc : double
+        Concentration c at which to evaluate the score.
+    het_mode : int, optional
+        0 for a site-level (pooled) VAF, 1 for a per-clone VAF. Default is 0.
+
+    Returns
+    -------
+    double
+        dQ/dc.
+    """
+    cdef int k, M = X.shape[0], J = X.shape[1]
+    cdef double score = 0.0, h, base
+
+    if _het_point_mass(het_conc):
+        return 0.0
+
+    h = 0.5 * het_conc
+    # d/dc [lgamma(c) - 2 lgamma(c/2)] = digamma(c) - digamma(c/2)
+    base = digamma(het_conc) - digamma(h)
+
+    for k in prange(M, schedule="static", nogil=True):
+        score += eta[k] * _het_conc_score_row(
+            X, k, J, het_conc, h, base, het_mode)
     return score

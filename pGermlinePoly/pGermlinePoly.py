@@ -13,10 +13,12 @@ from poly_utils import (
     observed_loglik_site,
     e_step_all,
     kappa_score,
+    het_conc_Q,
+    het_conc_score,
     sum_log_betabinom,
 )
 from scipy.optimize import minimize, minimize_scalar, brentq
-from scipy.special import expit
+from scipy.special import expit, gammaln
 from scipy.stats import beta, binom, chi2, norm, poisson, uniform
 
 logger = logging.getLogger(__name__)
@@ -127,7 +129,16 @@ class ProbGermline(ReadCountUtils):
         Default is 1e-3.
     """
 
-    def __init__(self, X, Theta, Phi=None, kappa=100.0, mu=1e-3):
+    def __init__(
+        self,
+        X,
+        Theta,
+        Phi=None,
+        kappa=100.0,
+        mu=1e-3,
+        het_conc=np.inf,
+        het_mode="site",
+    ):
         self.X = self.validate_X(X)
         self.M, self.J, _ = self.X.shape
         assert Theta.ndim == 2
@@ -149,6 +160,13 @@ class ProbGermline(ReadCountUtils):
 
         self.kappa = float(kappa)
         self.mu = float(mu)
+        self.het_conc = float(het_conc)
+        if het_mode not in ("site", "clone"):
+            raise ValueError(
+                f"het_mode must be 'site' or 'clone', got {het_mode!r}"
+            )
+        self.het_mode = het_mode
+        self._het_mode_code = 0 if het_mode == "site" else 1
         self.vaf = None
         self.logl_vaf = None
 
@@ -457,6 +475,8 @@ class ProbGermline(ReadCountUtils):
                 logit_pi=logit_pi[k],
                 mu=self.mu,
                 kappa=kappa,
+                het_conc=self.het_conc,
+                het_mode=self._het_mode_code,
             )
         return post_k
 
@@ -601,7 +621,7 @@ class ProbGermline(ReadCountUtils):
         # Per-genotype log-likelihoods summed across clones (binomial kernel, no comb. term)
         log_lik = np.empty((self.M, 3))
         log_lik[:, 0] = np.sum(alt * np.log(eps) + ref * np.log(1.0 - eps), axis=1)
-        log_lik[:, 1] = np.sum((alt + ref) * np.log(0.5), axis=1)
+        log_lik[:, 1] = self._log_lik_het(alt, ref)
         log_lik[:, 2] = np.sum(alt * np.log(1.0 - eps) + ref * np.log(eps), axis=1)
 
         # Genotype prior
@@ -684,6 +704,8 @@ class ProbGermline(ReadCountUtils):
                 logit_pi=logit_pi[k],
                 mu=self.mu,
                 kappa=kappa,
+                het_conc=self.het_conc,
+                het_mode=self._het_mode_code,
             )
         return logll
 
@@ -742,7 +764,17 @@ class ProbGermline(ReadCountUtils):
         logit_pi = self._compute_logit_pi(lambdas, betas)  # (M,)
         eta = np.zeros(self.M, dtype=np.float64)
         gammas = np.zeros((self.M, self.J), dtype=np.float64)
-        e_step_all(self.X, logit_phi, logit_pi, self.mu, kappa, eta, gammas)
+        e_step_all(
+            self.X,
+            logit_phi,
+            logit_pi,
+            self.mu,
+            kappa,
+            eta,
+            gammas,
+            self.het_conc,
+            self._het_mode_code,
+        )
         return eta, gammas
 
     def m_step_lambda_beta(self, eta, gammas, lambdas0, betas0, algo="L-BFGS-B"):
@@ -852,6 +884,277 @@ class ProbGermline(ReadCountUtils):
             )
         return opt.x[:L], opt.x[L:]
 
+    def _log_lik_het(self, alt, ref):
+        """Compute the per-site heterozygote log-likelihood for all M sites.
+
+        Mirrors the Cython het kernel used by :meth:`post_prob_poly`: a fixed
+        p = 0.5 binomial when ``self.het_conc`` is infinite, otherwise a
+        symmetric Beta(c/2, c/2) VAF prior integrated out either once per site
+        (``het_mode="site"``) or once per clone (``het_mode="clone"``).
+
+        Parameters
+        ----------
+        alt : numpy.ndarray
+            Alternative read counts, shape (M, J).
+        ref : numpy.ndarray
+            Reference read counts, shape (M, J).
+
+        Returns
+        -------
+        numpy.ndarray
+            Heterozygote log-likelihoods of shape (M,), binomial coefficient
+            omitted to match the somatic term.
+        """
+        n = alt + ref
+        c = self.het_conc
+        if not (c > 0.0 and c < 1e12):
+            return np.sum(n * np.log(0.5), axis=1)
+        h = 0.5 * c
+        log_norm = gammaln(c) - 2.0 * gammaln(h)
+        if self._het_mode_code == 0:
+            a_tot, n_tot = alt.sum(axis=1), n.sum(axis=1)
+            return (
+                gammaln(a_tot + h)
+                + gammaln(n_tot - a_tot + h)
+                - gammaln(n_tot + c)
+                + log_norm
+            )
+        return np.sum(
+            gammaln(alt + h) + gammaln(ref + h) - gammaln(n + c) + log_norm,
+            axis=1,
+        )
+
+    def _het_calibration_mask(
+        self,
+        method="window",
+        vaf_window=(0.42, 0.58),
+        eta_thresh=0.99,
+        mask=None,
+        lambdas=None,
+        betas=None,
+        kappa=None,
+    ):
+        """Select a high-purity set of germline heterozygotes for calibration.
+
+        Both selections are label-free.  ``"window"`` keeps sites whose pooled
+        minor-allele fraction falls in ``vaf_window``; because the window is
+        symmetric about 0.5 it is invariant to
+        :meth:`reorient_to_minor_allele`.  ``"twopass"`` runs one E-step under
+        the current parameters and keeps sites with responsibility above
+        ``eta_thresh``.
+
+        The two use nearly disjoint information — read counts alone versus the
+        fitted model — so agreement between the resulting estimates is a
+        label-free check that the selection is pure enough (see
+        :meth:`calibrate_het_conc`).
+
+        Parameters
+        ----------
+        method : str, optional
+            ``"window"`` or ``"twopass"``. Default is ``"window"``.
+        vaf_window : tuple of float, optional
+            Inclusive-exclusive bounds on the pooled minor-allele fraction for
+            ``method="window"``. Default is ``(0.42, 0.58)``.
+        eta_thresh : float, optional
+            Responsibility cutoff for ``method="twopass"``. Default is 0.99.
+        mask : numpy.ndarray or None, optional
+            Optional boolean array of shape (M,) intersected with the
+            selection — typically an external mappability filter such as
+            ``MQ >= 59.5 & VQSLOD > 0``. None applies no extra filter.
+        lambdas : numpy.ndarray or None, optional
+            Site-level weights for the ``"twopass"`` E-step, shape (L,).
+            None uses zeros (a neutral prior).
+        betas : numpy.ndarray or None, optional
+            Clone-level weights for the ``"twopass"`` E-step, shape (B,).
+            None uses zeros.
+        kappa : float or None, optional
+            Concentration for the ``"twopass"`` E-step. None uses
+            ``self.kappa``.
+
+        Returns
+        -------
+        numpy.ndarray
+            Boolean array of shape (M,) selecting the calibration set.
+
+        Raises
+        ------
+        ValueError
+            If ``method`` is not ``"window"`` or ``"twopass"``.
+        """
+        if method == "window":
+            n = self.X[:, :, 0].sum(axis=1) + self.X[:, :, 1].sum(axis=1)
+            frac = self.X[:, :, 1].sum(axis=1) / np.maximum(n, 1)
+            sel = (frac > vaf_window[0]) & (frac < vaf_window[1]) & (n > 0)
+        elif method == "twopass":
+            lam = np.zeros(self.L) if lambdas is None else lambdas
+            bet = np.zeros(self.B) if betas is None else betas
+            eta, _ = self._e_step(lam, bet, self.kappa if kappa is None else kappa)
+            sel = eta > eta_thresh
+        else:
+            raise ValueError(
+                f"method must be 'window' or 'twopass', got {method!r}"
+            )
+        if mask is not None:
+            sel = sel & np.asarray(mask, dtype=bool)
+        return sel
+
+    def calibrate_het_conc(
+        self,
+        method="both",
+        vaf_window=(0.42, 0.58),
+        eta_thresh=0.99,
+        mask=None,
+        lambdas=None,
+        betas=None,
+        kappa=None,
+        bracket=(0.5, 1e6),
+        rel_tol=0.5,
+        min_records=200,
+    ):
+        """Estimate the clone-level het VAF concentration without labels.
+
+        Solves ``het_conc_score = 0`` with unit weight on a high-purity
+        selection of heterozygotes and zero weight elsewhere.  Restricting to
+        a hard-thresholded set is what separates this from
+        :meth:`_m_step_het_conc`: the EM M-step spreads soft responsibility
+        over every site, and the overdispersed non-germline majority drags the
+        estimate down to a near-uniform VAF prior.
+
+        Only the clone-level parameterisation is calibrated.  Selecting on the
+        pooled allele fraction and then estimating the dispersion *of* that
+        pooled fraction is circular, so a site-level concentration should be
+        left at a fixed default rather than estimated this way.
+
+        Parameters
+        ----------
+        method : str, optional
+            ``"window"``, ``"twopass"``, or ``"both"``. ``"both"`` runs the two
+            selections and returns their geometric mean, warning when they
+            disagree by more than ``rel_tol``. Default is ``"both"``.
+        vaf_window : tuple of float, optional
+            Bounds on the pooled minor-allele fraction. Default (0.42, 0.58).
+        eta_thresh : float, optional
+            Responsibility cutoff for the ``"twopass"`` selection. Default 0.99.
+        mask : numpy.ndarray or None, optional
+            Optional boolean array of shape (M,) intersected with the
+            selection, e.g. an external mappability filter.
+        lambdas, betas, kappa
+            Passed to :meth:`_het_calibration_mask` for ``"twopass"``.
+        bracket : tuple of float, optional
+            Bracketing interval for Brent's method. Default (0.5, 1e6).
+        rel_tol : float, optional
+            Maximum tolerated relative gap between the two estimates before a
+            warning is raised. Default is 0.5 (50%).
+        min_records : int, optional
+            Minimum selected records required to attempt an estimate. Default
+            is 200.
+
+        Returns
+        -------
+        float
+            Estimated concentration, or ``np.nan`` if no selection yielded a
+            bracketed root.
+
+        Warns
+        -----
+        UserWarning
+            If a selection is too small, no root is bracketed, or the two
+            selections disagree by more than ``rel_tol``.
+
+        Notes
+        -----
+        The estimate is biased slightly high (tighter) by the VAF window, since
+        the window truncates the dispersed tail.  The bias is small for the
+        clone-level parameter because the selection acts on the pooled fraction
+        while the parameter describes per-clone scatter, and it errs toward the
+        conservative direction.
+        """
+        methods = ["window", "twopass"] if method == "both" else [method]
+        ests = {}
+        for m in methods:
+            sel = self._het_calibration_mask(
+                method=m,
+                vaf_window=vaf_window,
+                eta_thresh=eta_thresh,
+                mask=mask,
+                lambdas=lambdas,
+                betas=betas,
+                kappa=kappa,
+            )
+            if sel.sum() < min_records:
+                warnings.warn(
+                    f"calibrate_het_conc: selection '{m}' has only "
+                    f"{int(sel.sum())} records (< {min_records}); skipping."
+                )
+                continue
+            eta = sel.astype(np.float64)
+            score_fn = lambda c: het_conc_score(self.X, eta, c, 1)
+            lo, hi = bracket
+            try:
+                if score_fn(lo) * score_fn(hi) >= 0:
+                    warnings.warn(
+                        f"calibrate_het_conc: selection '{m}' did not bracket "
+                        f"a root in [{lo}, {hi}]; skipping."
+                    )
+                    continue
+                ests[m] = float(brentq(score_fn, lo, hi, xtol=1e-4, rtol=1e-8))
+            except ValueError:
+                warnings.warn(
+                    f"calibrate_het_conc: root finding failed for selection "
+                    f"'{m}'; skipping."
+                )
+        if not ests:
+            return float("nan")
+        vals = np.array(list(ests.values()))
+        if len(vals) == 2:
+            gap = abs(vals[0] - vals[1]) / min(vals)
+            logger.info(
+                "calibrate_het_conc: window=%.3f twopass=%.3f (relative gap %.3f)",
+                ests.get("window", np.nan),
+                ests.get("twopass", np.nan),
+                gap,
+            )
+            if gap > rel_tol:
+                warnings.warn(
+                    f"calibrate_het_conc: the two selections disagree by "
+                    f"{gap:.1%} (window={ests['window']:.2f}, "
+                    f"twopass={ests['twopass']:.2f}), which suggests the "
+                    f"calibration set is contaminated with non-heterozygotes."
+                )
+        return float(np.exp(np.mean(np.log(vals))))
+
+    def _m_step_het_conc(self, eta):
+        """Run the M-step to update the het VAF concentration c.
+
+        The germline component enters the complete-data log-likelihood only
+        through the site-level responsibilities, so ``c`` maximises
+        ``sum_k eta_k * log P(A_k, R_k | het; c)``. Brent's method is applied
+        to the analytic score over [1e-1, 1e6]; if no sign change is found the
+        current value is kept, mirroring :meth:`_m_step_kappa`.
+
+        Parameters
+        ----------
+        eta : numpy.ndarray
+            Site-level responsibilities from the E-step, shape (M,).
+
+        Returns
+        -------
+        float
+            Updated concentration c, or the current value when the het
+            component is a p = 0.5 point mass or no root is bracketed.
+        """
+        if not np.isfinite(self.het_conc):
+            return self.het_conc
+        score_fn = lambda c: het_conc_score(self.X, eta, c, self._het_mode_code)
+        lo, hi = 1e-1, 1e6
+        try:
+            if score_fn(lo) * score_fn(hi) >= 0:
+                return self.het_conc  # no sign change — keep current value
+            c_hat = brentq(score_fn, lo, hi, xtol=1e-6, rtol=1e-6)
+        except ValueError:
+            c_hat = self.het_conc
+        return float(c_hat)
+
     def _m_step_kappa(self, gammas):
         """Run the M-step to update kappa via Brent's method on the score function.
 
@@ -888,6 +1191,7 @@ class ProbGermline(ReadCountUtils):
         algo="L-BFGS-B",
         delta_logll=1e-4,
         max_iter=50,
+        fit_het_conc=False,
         **kwargs,
     ):
         """Run the EM algorithm to jointly estimate (lambda, beta, kappa).
@@ -914,6 +1218,13 @@ class ProbGermline(ReadCountUtils):
         max_iter : int, optional
             Maximum number of EM iterations before stopping regardless of
             convergence. Default is 50.
+        fit_het_conc : bool, optional
+            Whether to re-estimate the het VAF concentration ``self.het_conc``
+            in each M-step. Default is False, which holds it at its initial
+            value. Fitting it jointly with ``kappa`` is only weakly identified
+            — both components can absorb the same read patterns — so the
+            estimate tends to collapse towards a near-uniform VAF prior.
+            No-op when the het component is a p = 0.5 point mass.
         **kwargs
             Currently unused; accepted for forward compatibility.
 
@@ -963,6 +1274,10 @@ class ProbGermline(ReadCountUtils):
             # M-step: kappa (Brent on Cython score function)
             kappa = self._m_step_kappa(gammas)
 
+            # M-step: het VAF concentration (opt-in; see fit_het_conc)
+            if fit_het_conc:
+                self.het_conc = self._m_step_het_conc(eta)
+
             new_ll = self.complete_logll(lambdas=lambdas, betas=betas, kappa=kappa)
             prev_ll = loglls[-1]
             if new_ll < prev_ll - 1e-8:
@@ -983,11 +1298,12 @@ class ProbGermline(ReadCountUtils):
             loglls.append(new_ll)
             cur_delta = abs(loglls[-1] - loglls[-2])
             logger.info(
-                "EM iter %d  loglik=%.6f  delta=%.2e  kappa=%.4f",
+                "EM iter %d  loglik=%.6f  delta=%.2e  kappa=%.4f  het_conc=%.4g",
                 iteration,
                 new_ll,
                 cur_delta,
                 kappa,
+                self.het_conc,
             )
 
         if iteration < max_iter:
