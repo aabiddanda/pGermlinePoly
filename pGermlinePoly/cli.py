@@ -8,7 +8,12 @@ from tqdm import tqdm
 from cyvcf2 import VCF, Writer
 import sys
 
-from pGermlinePoly import ProbGermline, MutectLOD, BetaOverdispersion
+from pGermlinePoly import (
+    ProbGermline,
+    MutectLOD,
+    BetaOverdispersion,
+    __version__,
+)
 from pGermlinePoly.io import (
     validate_config,
     check_samples,
@@ -553,6 +558,10 @@ def main(
             out_vcf.add_to_header(
                 f"##degenerate_annotations={','.join(degenerate_names)}"
             )
+    # Recorded so an output can be traced to the code that produced it: the
+    # EM M-step objective changed in 0.0.7, so lambda, kappa, and every
+    # ppGermlinePoly value differ from earlier releases for the same input.
+    out_vcf.add_to_header(f"##pGermlinePoly_version={__version__}")
     out_vcf.add_to_header(f"##pGermlinePoly=run {' '.join(sys.argv[1:])}")
     write_vcf = Writer(fname=out, tmpl=out_vcf)
     write_vcf.write_header()

@@ -1018,3 +1018,34 @@ def test_cli_het_mode_site_accepted_with_explicit_conc(sim_vcf_paths, tmp_path):
     content = out_fp.read_text()
     assert "##het_conc=400.0" in content
     assert "##het_mode=site" in content
+
+
+def test_cli_writes_version_header(sim_vcf_paths, tmp_path):
+    """The output records the code version that produced it.
+
+    The EM M-step objective changed in 0.0.7, so outputs are not comparable
+    across that boundary; the header is what makes an old file identifiable.
+    """
+    from pGermlinePoly import __version__
+
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp,
+         "--em", "-o", out_fp]
+    )
+    assert result.exit_code == 0, result.output
+    assert f"##pGermlinePoly_version={__version__}" in out_fp.read_text()
+
+
+@pytest.mark.parametrize(
+    "flag", ["--em", "--lrt", "--mutect2", "--betabinomial", "--geno"]
+)
+def test_cli_version_header_present_for_every_mode(sim_vcf_paths, tmp_path, flag):
+    """The version header is written regardless of which analysis was run."""
+    out_fp = tmp_path / "out.vcf"
+    result = _run(
+        ["--vcf", sim_vcf_paths.vcf_fp, "--config", sim_vcf_paths.cfg_fp,
+         flag, "-o", out_fp]
+    )
+    assert result.exit_code == 0, result.output
+    assert "##pGermlinePoly_version=" in out_fp.read_text()
